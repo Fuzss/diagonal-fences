@@ -1,9 +1,10 @@
 {
+    "minecraft": "26.1.2",
     "mod": {
         "id": "diagonalfences",
         "group": "fuzs.diagonalfences",
         "name": "Diagonal Fences",
-        "version": "21.11.1",
+        "version": "26.1.0",
         "authors": [
             "Fuzs",
             "XFactHD"
@@ -45,13 +46,13 @@
     ],
     "links": [
         {
-            "name": "github",
-            "slug": "diagonalfences"
-        },
-        {
             "name": "curseforge",
             "slug": "diagonal-fences",
             "id": "458048"
+        },
+        {
+            "name": "github",
+            "slug": "diagonal-fences"
         },
         {
             "name": "modrinth",

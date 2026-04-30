@@ -1,8 +1,8 @@
 package fuzs.diagonalfences.fabric.client;
 
-import fuzs.diagonalfences.DiagonalFences;
-import fuzs.diagonalfences.client.DiagonalFencesClient;
-import fuzs.puzzleslib.api.client.core.v1.ClientModConstructor;
+import fuzs.diagonalfences.common.DiagonalFences;
+import fuzs.diagonalfences.common.client.DiagonalFencesClient;
+import fuzs.puzzleslib.common.api.client.core.v1.ClientModConstructor;
 import net.fabricmc.api.ClientModInitializer;
 
 public class DiagonalFencesFabricClient implements ClientModInitializer {

@@ -1,7 +1,7 @@
 package fuzs.diagonalfences.neoforge;
 
-import fuzs.diagonalfences.DiagonalFences;
-import fuzs.puzzleslib.api.core.v1.ModConstructor;
+import fuzs.diagonalfences.common.DiagonalFences;
+import fuzs.puzzleslib.common.api.core.v1.ModConstructor;
 import net.neoforged.fml.common.Mod;
 
 @Mod(DiagonalFences.MOD_ID)

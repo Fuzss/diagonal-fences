@@ -1,8 +1,8 @@
-package fuzs.diagonalfences;
+package fuzs.diagonalfences.common;
 
-import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockType;
-import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockTypes;
-import fuzs.puzzleslib.api.core.v1.ModConstructor;
+import fuzs.diagonalblocks.common.api.v2.block.type.DiagonalBlockType;
+import fuzs.diagonalblocks.common.api.v2.block.type.DiagonalBlockTypes;
+import fuzs.puzzleslib.common.api.core.v1.ModConstructor;
 import net.minecraft.resources.Identifier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
