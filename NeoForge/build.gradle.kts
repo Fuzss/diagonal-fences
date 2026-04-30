@@ -3,9 +3,9 @@ plugins {
 }
 
 dependencies {
-    modCompileOnly(libs.puzzleslib.common)
-    modApi(libs.puzzleslib.neoforge)
-    modCompileOnly(libs.diagonalblocks.common)
-    modApi(libs.diagonalblocks.neoforge)
-    include(libs.diagonalblocks.neoforge)
+    modCompileOnly(sharedLibs.puzzleslib.common)
+    modApi(sharedLibs.puzzleslib.neoforge)
+    modCompileOnly(sharedLibs.diagonalblocks.common)
+    modApi(sharedLibs.diagonalblocks.neoforge)
+    include(sharedLibs.diagonalblocks.neoforge)
 }

@@ -3,8 +3,8 @@ plugins {
 }
 
 dependencies {
-    modApi(libs.fabricapi.fabric)
-    modApi(libs.puzzleslib.fabric)
-    modApi(libs.diagonalblocks.fabric)
-    include(libs.diagonalblocks.fabric)
+    modApi(sharedLibs.fabricapi.fabric)
+    modApi(sharedLibs.puzzleslib.fabric)
+    modApi(sharedLibs.diagonalblocks.fabric)
+    include(sharedLibs.diagonalblocks.fabric)
 }
