@@ -11,6 +11,13 @@ import net.minecraft.core.BlockPos;
  * level, which is not viable here: the diagonal fence blocks are created at mod-construct time, and
  * {@code attachesDiagonallyTo} consults {@link net.minecraft.tags.BlockTags#FENCES}, which is
  * datapack-loaded and absent after {@code Bootstrap.bootStrap()}.
+ * <p>
+ * <strong>Positions handed to these methods are valid for the duration of the call only.</strong>
+ * {@link ElevatedConnections#computePitchMask(FenceView, BlockPos, int)} runs on the collision path
+ * and reuses one {@link net.minecraft.core.BlockPos.MutableBlockPos} for all sixteen neighbour
+ * probes rather than allocating sixteen positions per query. An implementation may read a position
+ * and may look one up in a map -- {@code MutableBlockPos} inherits {@link net.minecraft.core.Vec3i}
+ * equality, so that resolves by value -- but must never store the reference or use it as a map key.
  */
 public interface FenceView {
 

@@ -29,7 +29,7 @@ import java.util.List;
  */
 public final class ElevatedShapeCache {
     /** Flat state shapes, one per combination of the eight flat arm properties. */
-    public static final int FLAT_INDEX_COUNT = 256;
+    public static final int FLAT_INDEX_COUNT = 1 << ElevatedConnections.FLAT_INDEX_WIDTH;
     /**
      * Entries kept before the cache stops growing.
      * <p>
@@ -42,8 +42,8 @@ public final class ElevatedShapeCache {
     public static final int DEFAULT_MAX_CACHED_SHAPES = 4096;
 
     private static final Logger LOGGER = LogManager.getLogger(DiagonalFences.MOD_NAME);
-    private static final int PITCH_MASK_SHIFT = 8;
-    private static final int FLAT_INDEX_MASK = 0xFF;
+    private static final int PITCH_MASK_SHIFT = ElevatedConnections.FLAT_INDEX_WIDTH;
+    private static final int FLAT_INDEX_MASK = FLAT_INDEX_COUNT - 1;
     private static final int PITCH_MASK_LIMIT = 1 << ElevatedConnections.PITCH_MASK_WIDTH;
     /** One up arm and one down arm per direction. */
     private static final int ARM_COUNT = 2 * 8;
@@ -121,7 +121,7 @@ public final class ElevatedShapeCache {
         if (pitchMask < 0 || pitchMask >= PITCH_MASK_LIMIT) {
             throw new IllegalArgumentException("pitch mask " + pitchMask + " outside 0.." + (PITCH_MASK_LIMIT - 1));
         }
-        if (pitchMask == 0) {
+        if (pitchMask == ElevatedConnections.EMPTY_PITCH_MASK) {
             return this.flatShapes[flatIndex];
         }
         int key = flatIndex | (pitchMask << PITCH_MASK_SHIFT);

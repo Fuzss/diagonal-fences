@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -191,6 +192,115 @@ class ElevatedConnectionsTest {
                 .withFence(down(direction));
         assertEquals(ElevatedConnections.PITCH_UP,
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
+    }
+
+    // --- flat index fast path -----------------------------------------------------------------
+
+    /**
+     * The whole fast path rests on upstream's flat index using one bit per direction at
+     * {@code 1 << directionIndex}. Pinning it here means a change to {@code getHorizontalIndex}
+     * upstream fails loudly instead of silently suppressing every sloped arm.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void hasFlatArmMatchesUpstreamsHorizontalIndex(EightWayDirection direction) {
+        int flatIndex = direction.getHorizontalIndex();
+        assertTrue(ElevatedConnections.hasFlatArm(flatIndex, direction));
+        for (EightWayDirection other : EightWayDirection.values()) {
+            if (other != direction) {
+                assertFalse(ElevatedConnections.hasFlatArm(flatIndex, other),
+                        "direction " + other + " read a bit belonging to " + direction);
+            }
+        }
+        assertFalse(ElevatedConnections.hasFlatArm(ElevatedConnections.NO_FLAT_ARMS, direction));
+    }
+
+    /**
+     * A flat arm known from the index must kill the up arm <em>and</em> the down arm, because
+     * {@code connectsElevated} suppresses on either end and self is the lower end of one candidate
+     * and the upper end of the other. Skipping only one of the two would leave a one-sided arm.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void aFlatArmInTheIndexSuppressesBothTheUpAndTheDownArm(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(direction))
+                .withFence(down(direction));
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView,
+                        ORIGIN,
+                        ElevatedConnections.NO_FLAT_ARMS), direction),
+                "without the flat arm this direction should slope, or the test proves nothing");
+
+        int flatIndex = direction.getHorizontalIndex();
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, ORIGIN, flatIndex),
+                "a flat arm toward " + direction + " must suppress both candidates there");
+
+        // and only there -- the other seven directions still resolve normally
+        FakeFenceView allNeighbors = new FakeFenceView().withFence(ORIGIN);
+        for (EightWayDirection other : EightWayDirection.values()) {
+            allNeighbors.withFence(up(other));
+        }
+        int pitchMask = ElevatedConnections.computePitchMask(allNeighbors, ORIGIN, flatIndex);
+        for (EightWayDirection other : EightWayDirection.values()) {
+            assertEquals(other == direction ? ElevatedConnections.PITCH_NONE : ElevatedConnections.PITCH_UP,
+                    ElevatedConnections.pitchFor(pitchMask, other),
+                    "direction " + other + " was affected by a flat arm toward " + direction);
+        }
+    }
+
+    /**
+     * The fast path is an optimisation, so it must never change an answer. Exhaustive over all 256
+     * indices, against a view whose flat arms agree with the index -- which is the only case
+     * production ever passes, since the index is derived from the very block state being queried.
+     */
+    @Test
+    void theFlatIndexOverloadAgreesWithTheViewDrivenOneForEveryIndex() {
+        for (int flatIndex = 0; flatIndex < 1 << ElevatedConnections.FLAT_INDEX_WIDTH; flatIndex++) {
+            FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN);
+            for (EightWayDirection direction : EightWayDirection.values()) {
+                fenceView.withFence(up(direction)).withFence(down(direction));
+                if (ElevatedConnections.hasFlatArm(flatIndex, direction)) {
+                    fenceView.withFlatArm(ORIGIN, direction);
+                }
+            }
+            assertEquals(ElevatedConnections.computePitchMask(fenceView, ORIGIN),
+                    ElevatedConnections.computePitchMask(fenceView, ORIGIN, flatIndex),
+                    "the two overloads diverged at flat index " + flatIndex);
+        }
+    }
+
+    @Test
+    void computePitchMaskRejectsAFlatIndexOutsideEightBits() {
+        FenceView fenceView = new FakeFenceView().withFence(ORIGIN);
+        assertThrows(IllegalArgumentException.class,
+                () -> ElevatedConnections.computePitchMask(fenceView, ORIGIN, -1));
+        assertThrows(IllegalArgumentException.class,
+                () -> ElevatedConnections.computePitchMask(fenceView,
+                        ORIGIN,
+                        1 << ElevatedConnections.FLAT_INDEX_WIDTH));
+    }
+
+    /**
+     * The neighbour position is a single reused {@link BlockPos.MutableBlockPos}. If a probe ever
+     * left it holding the previous direction's coordinates, the mask would come out wrong; asking
+     * for all eight directions at once is what would catch that.
+     */
+    @Test
+    void reusingOneMutablePositionDoesNotLeakBetweenDirections() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN);
+        for (EightWayDirection direction : EightWayDirection.values()) {
+            // up for cardinals, down for intercardinals, so a stale position cannot accidentally
+            // land on a position that happens to be right
+            fenceView.withFence(direction.isIntercardinal() ? down(direction) : up(direction));
+        }
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        for (EightWayDirection direction : EightWayDirection.values()) {
+            assertEquals(direction.isIntercardinal() ? ElevatedConnections.PITCH_DOWN : ElevatedConnections.PITCH_UP,
+                    ElevatedConnections.pitchFor(pitchMask, direction),
+                    "direction " + direction + " resolved against a stale position");
+        }
     }
 
     // --- argument guard -----------------------------------------------------------------------

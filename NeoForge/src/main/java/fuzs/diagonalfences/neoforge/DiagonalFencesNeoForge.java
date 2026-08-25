@@ -1,5 +1,6 @@
 package fuzs.diagonalfences.neoforge;
 
+import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockTypes;
 import fuzs.diagonalfences.DiagonalFences;
 import fuzs.puzzleslib.api.core.v1.ModConstructor;
 import net.neoforged.fml.common.Mod;
@@ -8,6 +9,7 @@ import net.neoforged.fml.common.Mod;
 public class DiagonalFencesNeoForge {
 
     public DiagonalFencesNeoForge() {
-        ModConstructor.construct(DiagonalFences.MOD_ID, DiagonalFences::new);
+        // stock diagonal fences, unchanged. Sloped arms are Fabric-only -- see DiagonalFencesFabric.
+        ModConstructor.construct(DiagonalFences.MOD_ID, () -> new DiagonalFences(DiagonalBlockTypes.FENCE));
     }
 }
