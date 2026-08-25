@@ -1,0 +1,41 @@
+package fuzs.diagonalfences.world.level.block;
+
+import fuzs.diagonalblocks.api.v2.util.EightWayDirection;
+import net.minecraft.core.BlockPos;
+
+/**
+ * The narrow view of the world that {@link ElevatedConnections} needs.
+ * <p>
+ * This seam exists so the pitch policy -- offset arithmetic, up/down pairing, flat precedence and
+ * mask packing -- is plain logic that can be unit tested. The alternative is testing against a real
+ * level, which is not viable here: the diagonal fence blocks are created at mod-construct time, and
+ * {@code attachesDiagonallyTo} consults {@link net.minecraft.tags.BlockTags#FENCES}, which is
+ * datapack-loaded and absent after {@code Bootstrap.bootStrap()}.
+ */
+public interface FenceView {
+
+    /**
+     * Whether the blocks at the two positions may form an arm of this feature's kind.
+     * <p>
+     * <strong>Implementations must be symmetric</strong>: {@code attachable(a, b, d)} must equal
+     * {@code attachable(b, a, d.getOpposite())}. The straightforward way to guarantee that is to
+     * evaluate both ends and combine with {@code &&}, which is how upstream's
+     * {@link fuzs.diagonalblocks.api.v2.block.StarCollisionBlock#updateDiagonalProperties} does it.
+     *
+     * @param from     one end of the candidate arm
+     * @param to       the other end
+     * @param dirFromTo the horizontal direction pointing from {@code from} to {@code to}
+     * @return whether the two blocks may attach
+     */
+    boolean attachable(BlockPos from, BlockPos to, EightWayDirection dirFromTo);
+
+    /**
+     * Whether the block at {@code blockPos} already carries a flat (same height) arm toward
+     * {@code direction}. A flat arm already occupies that face, so it suppresses any pitch there.
+     *
+     * @param blockPos  the position to inspect
+     * @param direction the arm direction to inspect
+     * @return whether a flat arm is present
+     */
+    boolean hasFlatArm(BlockPos blockPos, EightWayDirection direction);
+}
