@@ -1,1 +1,10 @@
-accessWidener   v2  named
+accessWidener	v2	named
+
+# VoxelShape#shape is written by diagonalblocks' ExtensibleVoxelShape, which every shape this mod
+# composes (NoneVoxelShape, VoxelCollection) extends. diagonalblocks widens it too, but relying on a
+# dependency's widener means the class cannot even be loaded outside a Fabric/NeoForge runtime --
+# a plain JUnit JVM throws VerifyError: Bad access to protected data in getfield. Declaring it here
+# applies the widening to the workspace Minecraft jar, so the Common unit tests can exercise the
+# real shape composition instead of a stand-in.
+accessible	field	net/minecraft/world/phys/shapes/VoxelShape	shape	Lnet/minecraft/world/phys/shapes/DiscreteVoxelShape;
+mutable	field	net/minecraft/world/phys/shapes/VoxelShape	shape	Lnet/minecraft/world/phys/shapes/DiscreteVoxelShape;

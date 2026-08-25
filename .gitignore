@@ -67,3 +67,8 @@ run
 
 # BlueJ files
 *.ctxt
+
+### Minecraft ###
+# Bootstrap.bootStrap() in the Common test source set writes a log directory beside the module.
+logs/
+run/
