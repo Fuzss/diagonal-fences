@@ -25,4 +25,9 @@ final class FakeFenceView implements FenceView {
     public boolean attachable(BlockPos from, BlockPos to, EightWayDirection dirFromTo) {
         return this.fences.contains(from) && this.fences.contains(to);
     }
+
+    @Override
+    public boolean fenceAbove(BlockPos blockPos) {
+        return this.fences.contains(blockPos.above());
+    }
 }

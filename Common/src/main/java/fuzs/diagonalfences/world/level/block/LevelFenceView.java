@@ -29,6 +29,22 @@ public record LevelFenceView(BlockGetter blockGetter, DiagonalBlockType diagonal
     }
 
     /**
+     * A fence is buried when another of its own kind sits on top of it. Type identity only: the same
+     * test {@link #attaches} opens with, without the {@code attachesDiagonallyTo} half, because there
+     * is no side involved in standing on something.
+     * <p>
+     * {@code BlockPos#above()} returns a fresh immutable position even when handed a
+     * {@link net.minecraft.core.BlockPos.MutableBlockPos}, so this cannot disturb the probe position
+     * {@link ElevatedConnections#computePitchMask} reuses.
+     */
+    @Override
+    public boolean fenceAbove(BlockPos blockPos) {
+        BlockState aboveBlockState = this.blockStateAt(blockPos.above());
+        return aboveBlockState.getBlock() instanceof DiagonalBlock diagonalBlock
+                && diagonalBlock.getType() == this.diagonalBlockType;
+    }
+
+    /**
      * Deliberately uses {@link DiagonalBlock#attachesDiagonallyTo} for cardinal directions too,
      * rather than {@link DiagonalBlock#attachesDirectlyTo} as upstream does for the flat case.
      * <p>

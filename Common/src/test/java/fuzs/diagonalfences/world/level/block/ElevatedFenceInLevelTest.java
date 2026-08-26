@@ -314,18 +314,23 @@ class ElevatedFenceInLevelTest {
 
     /**
      * The far end's flat arm does not block it either. In a real build this is a rising run arriving
-     * at a landing that already runs flat, and it is the case that would break first if
+     * at a landing that then carries on flat, and it is the case that would break first if
      * {@code connectsElevated} were ever rewritten as "the lower block looks up, the upper block
      * looks down" -- the flat arm belongs to only one of the two ends, so an asymmetric rule shows
      * up here as a one-sided arm.
+     * <p>
+     * The landing runs on <em>past</em> the upper end rather than back over the lower one, and that
+     * is forced, not stylistic: a fence rail on the face the arm arrives at would have to stand at
+     * {@code ORIGIN.above()}, and since Phase 10 that is the buried case, not this one. It is
+     * asserted as such in {@link #aFenceBuriedUnderAnotherFenceGrowsNoArm}.
      */
     @Test
     void theNeighboursFlatArmDoesNotBlockTheSlopeEither() {
         BlockPos upper = ORIGIN.offset(1, 1, 0);
-        BlockState upperRunningFlatWest = fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        BlockState upperRunningFlatEast = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
         FakeLevel level = new FakeLevel().withBlock(ORIGIN, fence())
-                .withBlock(upper, upperRunningFlatWest)
-                .withBlock(upper.offset(-1, 0, 0), fence());
+                .withBlock(upper, upperRunningFlatEast)
+                .withBlock(upper.offset(1, 0, 0), fence());
 
         assertSame(expectedShape(fenceBlock.collisionShapes(),
                         pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
@@ -333,32 +338,106 @@ class ElevatedFenceInLevelTest {
                 "the far end's occupied face must not veto the arm reaching it");
     }
 
+    // --- only the top of a column grows an arm (Phase 10) ----------------------------------------
+
     /**
-     * Two adjacent two-tall fence columns, asserted through a real level: they cross.
+     * <strong>This is the test that fails if Phase 10 is reverted.</strong> The owner's screenshot:
+     * a fence buried under another fence had grown a rail to the neighbour one up and one along, so
+     * a stacked wall read as a lattice rather than as a railing.
      * <p>
-     * <strong>Stated to the owner before it was written, and wanted.</strong> It is the most
-     * conspicuous consequence of dropping precedence and the thing most likely to be mistaken for a
-     * bug later, so it is pinned at both ends rather than left to be rediscovered.
+     * The lower block of the near column is a legitimate arm candidate by every other rule in the
+     * feature -- a real fence of the right type, one up and one along, attachable at both ends. Only
+     * the fence sitting on its head disqualifies it, which is why the assertion is that it comes
+     * back with upstream's flat shape untouched.
      */
     @Test
-    void twoAdjacentTwoTallColumnsCross() {
+    void aFenceBuriedUnderAnotherFenceGrowsNoArm() {
+        BlockState buried = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, buried)
+                .withBlock(ORIGIN.above(), fence())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(), buried, ElevatedConnections.EMPTY_PITCH_MASK),
+                buried.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "a fence with a fence on top of it is a post and must stay flat");
+    }
+
+    /**
+     * The far-end half of the same rule, and the half that a lower-end-only implementation would let
+     * through: the queried fence is a perfectly good top piece, but the fence it would reach down to
+     * is buried. Drawing it would put a falling rail on a block in the middle of a column, which is
+     * the reported artefact seen from the other side.
+     */
+    @Test
+    void noArmReachesDownToABuriedFence() {
+        BlockPos top = ORIGIN.offset(1, 1, 0);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, fence())
+                .withBlock(ORIGIN.above(), fence())
+                .withBlock(top, fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(), ElevatedConnections.EMPTY_PITCH_MASK),
+                collisionShapeAt(level, top),
+                "the upper fence must not fall toward a fence that is buried under another one");
+    }
+
+    /**
+     * The control, and the shape Phase 9 exists for: a two-tall column whose <em>top</em> climbs on
+     * to the next step. Without this the two tests above would also pass against code that had
+     * simply stopped sloping near any vertical stack.
+     */
+    @Test
+    void theTopOfATwoTallColumnStillClimbs() {
+        BlockPos columnTop = ORIGIN.above();
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, fence())
+                .withBlock(columnTop, fence())
+                .withBlock(columnTop.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                collisionShapeAt(level, columnTop),
+                "the top of a column is a railing top and must still rise east");
+    }
+
+    /**
+     * Two adjacent two-tall fence columns, asserted through a real level: they no longer cross.
+     * <p>
+     * Phase 9 shipped this X deliberately, stated to the owner in advance and pinned at both ends so
+     * nobody would "fix" it by accident. The owner then saw it in game and rejected it, which is the
+     * one thing that outranks the pin. Fixture unchanged from Phase 9; only the expectations moved.
+     */
+    @Test
+    void twoAdjacentTwoTallColumnsDoNotCross() {
         BlockPos nearTop = ORIGIN.above();
         BlockState nearBottomState = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        BlockState nearTopState = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
         FakeLevel level = new FakeLevel().withBlock(ORIGIN, nearBottomState)
-                .withBlock(nearTop, fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE))
+                .withBlock(nearTop, nearTopState)
                 .withBlock(ORIGIN.offset(1, 0, 0), fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE))
                 .withBlock(ORIGIN.offset(1, 1, 0), fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE));
 
-        assertSame(expectedShape(fenceBlock.collisionShapes(),
-                        nearBottomState,
-                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+        assertSame(expectedShape(fenceBlock.collisionShapes(), nearBottomState, ElevatedConnections.EMPTY_PITCH_MASK),
                 nearBottomState.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
-                "the lower fence of the near column rises to the top of the far one");
-        assertSame(expectedShape(fenceBlock.collisionShapes(),
-                        fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE),
-                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_DOWN)),
+                "the buried lower fence of the near column must not rise to the top of the far one");
+        assertSame(expectedShape(fenceBlock.collisionShapes(), nearTopState, ElevatedConnections.EMPTY_PITCH_MASK),
                 collisionShapeAt(level, nearTop),
-                "the upper fence of the near column falls to the bottom of the far one -- the other half of the X");
+                "and the near top must not fall to the far column's buried lower block");
+    }
+
+    /**
+     * Only a fence buries a fence. Anything else standing on one -- an overhang, a slab, a lantern --
+     * leaves it the top of its column and it keeps its rail, which is what stops Phase 10 from
+     * quietly becoming "no slope under anything at all".
+     */
+    @Test
+    void aBlockThatIsNotAFenceOnTopDoesNotSuppressTheSlope() {
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, fence())
+                .withBlock(ORIGIN.above(), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                collisionShapeAt(level, ORIGIN),
+                "a solid block resting on a fence is not another fence and must not cost it its rail");
     }
 
     /**

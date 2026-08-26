@@ -20,10 +20,15 @@ import net.minecraft.core.BlockPos;
  * already accepted for arms buried in a riser block -- and suppressing on that basis is what stopped
  * a railing climbing past a two-tall fence column, which is the shape the feature exists to draw.
  * <p>
- * <strong>Consequence, and it is intended:</strong> two adjacent two-tall columns grow an X. The
- * lower fence rises to the far upper one while the upper fence falls to the far lower one. Each
- * direction still carries at most one arm, because {@link #computePitchMask} takes the first of
- * up-then-down.
+ * <strong>Only the top of a column grows an arm.</strong> A fence with another fence of its own kind
+ * directly above it is a post, not a railing top, and neither end of an arm may be one. That is the
+ * one rule left standing after the flat-arm veto went away, and it is what keeps a stacked fence wall
+ * from turning into a lattice -- Phase 9 shipped without it and every block of every column sprouted
+ * rails. It also retires the X that Phase 9 accepted: two adjacent two-tall columns are four covered
+ * or covered-facing blocks, so nothing crosses.
+ * <p>
+ * The rule is applied to <em>both</em> ends. Applied to the lower end alone it would still let a
+ * buried fence draw a falling arm, which is the same artefact upside down.
  */
 public final class ElevatedConnections {
     /** No sloped arm in this direction. */
@@ -101,9 +106,12 @@ public final class ElevatedConnections {
             throw new IllegalArgumentException(
                     "positions " + lower + " and " + upper + " are not a " + dirLowerToUpper + " arm rising by one");
         }
-        // Attachability is the whole rule. A flat arm on the same face used to veto the pitch here;
-        // see the class javadoc for why that went away.
-        return fenceView.attachable(lower, upper, dirLowerToUpper);
+        // Attachability first: it is the test that fails for the overwhelming majority of the sixteen
+        // probes a mask costs, so the two ceiling probes are only paid where an arm is otherwise
+        // real. A flat arm on the same face used to veto the pitch here; see the class javadoc for
+        // why that went away, and for why being buried under another fence still does.
+        return fenceView.attachable(lower, upper, dirLowerToUpper) && !fenceView.fenceAbove(lower)
+                && !fenceView.fenceAbove(upper);
     }
 
     /**
@@ -123,6 +131,13 @@ public final class ElevatedConnections {
      * shortcut that only one of the two callers can take.
      */
     public static int computePitchMask(FenceView fenceView, BlockPos blockPos) {
+        // A buried fence is refused by connectsElevated as the lower end and as the upper end alike, so
+        // every one of the sixteen probes below would come back false. Collapsing them to this single
+        // lookup must stay exactly equivalent to the per-arm rule: widen one and this goes stale, and
+        // the collision path and the render path would then draw different fences from one world.
+        if (fenceView.fenceAbove(blockPos)) {
+            return EMPTY_PITCH_MASK;
+        }
         // One mutable position for all sixteen neighbour probes rather than sixteen allocations.
         // FenceView forbids implementations from retaining what they are handed, which is what makes
         // this safe; see the contract there.

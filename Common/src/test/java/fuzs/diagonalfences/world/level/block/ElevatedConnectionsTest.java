@@ -146,23 +146,73 @@ class ElevatedConnectionsTest {
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
     }
 
-    // --- a flat arm suppresses nothing (Phase 9) ------------------------------------------------
+    // --- only the top of a column grows an arm (Phase 10) ---------------------------------------
 
     /**
-     * <strong>Phase 9.</strong> A flat arm on a face used to veto a pitch on that face. It no longer
-     * does, so at this seam the rule is simply attachability and there is nothing left to suppress
-     * with -- {@link FakeFenceView} cannot even express a flat arm any more.
-     * <p>
-     * What is worth pinning here is the <em>shape</em> that change produces, because it is the part
-     * an onlooker is most likely to mistake for a bug and "fix": two adjacent two-tall fence columns
-     * cross. The lower fence rises to the far upper one while the upper fence falls to the far lower
-     * one, and both arms are real. Removing precedence without meaning to allow this would be a
-     * misunderstanding of the change, not a refinement of it.
+     * <strong>Phase 10, and the reported artefact.</strong> The owner's screenshot: a stacked fence
+     * wall where every block of every column had sprouted a rail. A fence with another fence on top
+     * of it is a post; it draws nothing, in any of the eight directions, up or down.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void aBuriedFenceGrowsNoArmAtAll(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(ORIGIN.above())
+                .withFence(up(direction))
+                .withFence(down(direction));
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, ORIGIN),
+                "a fence with a fence on top must draw no rail toward " + direction);
+    }
+
+    /**
+     * The other half of the rule, and the half a lower-end-only implementation would drop: the
+     * block being asked is a perfectly good top piece, but the far end of the arm is buried. No arm
+     * -- otherwise the buried fence would be seen carrying a falling rail, which is the same
+     * artefact mirrored.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void anArmIsRefusedWhenTheFarEndIsBuried(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(direction))
+                .withFence(up(direction).above());
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction),
+                "the near fence is a top piece but the far one is not");
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, up(direction)),
+                "and the buried far fence must not report the arm either");
+    }
+
+    /**
+     * The control that keeps the two tests above from passing vacuously. The same two-tall column,
+     * read from its <em>top</em> block: that one is a railing top and does connect. Without this,
+     * code that had simply stopped sloping anywhere near a vertical stack would pass, and it would
+     * break the shape Phase 9 exists for -- a railing climbing past a post.
+     */
+    @Test
+    void theTopOfAColumnStillClimbs() {
+        BlockPos columnTop = ORIGIN.above();
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(columnTop)
+                .withFence(columnTop.offset(1, 1, 0));
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, columnTop),
+                        EightWayDirection.EAST),
+                "the top block of a two-tall column must still rise east");
+    }
+
+    /**
+     * <strong>Phase 10 inverts Phase 9's X.</strong> Two adjacent two-tall columns used to cross:
+     * the lower fence of each rose to the top of the other. Seen in game and rejected by the owner
+     * -- every block involved is buried or faces a buried block, so all four arms are gone. The
+     * fixture is Phase 9's, unchanged, so the diff is the assertion and nothing else.
      *
      * @see ElevatedConnections
      */
     @Test
-    void twoAdjacentTwoTallColumnsCross() {
+    void twoAdjacentTwoTallColumnsDoNotCross() {
         BlockPos nearTop = ORIGIN.above();
         BlockPos farBottom = ORIGIN.offset(1, 0, 0);
         BlockPos farTop = ORIGIN.offset(1, 1, 0);
@@ -171,29 +221,26 @@ class ElevatedConnectionsTest {
                 .withFence(farBottom)
                 .withFence(farTop);
 
-        assertEquals(ElevatedConnections.PITCH_UP,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN),
-                        EightWayDirection.EAST),
-                "the near lower fence must rise to the far upper one");
-        assertEquals(ElevatedConnections.PITCH_DOWN,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, nearTop),
-                        EightWayDirection.EAST),
-                "the near upper fence must fall to the far lower one -- this is the other half of the X");
-        // And the same X read from the far column, which is the symmetry property applied to it.
-        assertEquals(ElevatedConnections.PITCH_UP,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, farBottom),
-                        EightWayDirection.WEST));
-        assertEquals(ElevatedConnections.PITCH_DOWN,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, farTop),
-                        EightWayDirection.WEST));
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, ORIGIN),
+                "the near lower fence is buried and must not rise to the far upper one");
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, nearTop),
+                "the near upper fence must not fall to the far lower one -- the far one is buried");
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, farBottom));
+        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
+                ElevatedConnections.computePitchMask(fenceView, farTop));
     }
 
+    // --- a flat arm suppresses nothing (Phase 9) ------------------------------------------------
+
     /**
-     * The reported build, at this seam: a fence whose face already carries a flat rail must still
-     * reach the fence one up and one along. The fake records only attachability, so this is the
-     * upper half of {@link #twoAdjacentTwoTallColumnsCross} isolated -- the assertion that the flat
-     * neighbour's presence changes nothing lives in {@code ElevatedFenceInLevelTest}, where a real
-     * side property exists to be ignored.
+     * The Phase 9 build, at this seam: a fence whose face already carries a flat rail must still
+     * reach the fence one up and one along. Nothing here is buried, so Phase 10 leaves it alone --
+     * the two rules are independent and this is the test that says so. The fake records only
+     * attachability, so the assertion that the flat neighbour's <em>property</em> changes nothing
+     * lives in {@code ElevatedFenceInLevelTest}, where a real side property exists to be ignored.
      */
     @ParameterizedTest
     @EnumSource(EightWayDirection.class)

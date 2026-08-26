@@ -35,4 +35,20 @@ public interface FenceView {
      * @return whether the two blocks may attach
      */
     boolean attachable(BlockPos from, BlockPos to, EightWayDirection dirFromTo);
+
+    /**
+     * Whether a fence of this feature's kind stands directly above {@code blockPos} -- that is,
+     * whether the block asked about is buried in a column rather than being the top of one.
+     * <p>
+     * Only a fence counts. A slab, a lantern or a torch resting on a fence is not another fence and
+     * must not suppress a rail; the question here is "is one of my own posts continuing upward", not
+     * "is that space occupied".
+     * <p>
+     * There is no side to attach to when stacking vertically, so this is an identity test on the
+     * block above and nothing more -- deliberately not a call into {@code attachesDiagonallyTo}.
+     *
+     * @param blockPos the position whose ceiling is being probed
+     * @return whether the position one block up holds a fence of this kind
+     */
+    boolean fenceAbove(BlockPos blockPos);
 }
