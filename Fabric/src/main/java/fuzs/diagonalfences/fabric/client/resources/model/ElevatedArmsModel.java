@@ -113,9 +113,10 @@ final class ElevatedArmsModel implements BlockStateModel {
      * {@link net.minecraft.world.level.BlockGetter}, so the client gets the same mask from the same
      * code as collision does. A second implementation here is how render and collision would drift.
      * <p>
-     * The two-argument overload is correct here even though a three-argument one exists: the fast
-     * path needs this block's own flat arm index, and the {@code state} handed to a model is not
-     * guaranteed to be this block's.
+     * There is only one overload to call. The flat-index fast path that used to sit beside it was
+     * removed in Phase 6 precisely so that render and collision could not take different routes to
+     * the same mask -- which matters here, because the {@code state} handed to a model is not
+     * guaranteed to be this block's and so cannot be used to shortcut anything.
      */
     private int pitchMask(BlockAndTintGetter blockView, BlockPos pos) {
         return ElevatedConnections.computePitchMask(new LevelFenceView(blockView, this.diagonalBlockType), pos);

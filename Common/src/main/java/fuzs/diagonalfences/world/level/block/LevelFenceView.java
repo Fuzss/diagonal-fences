@@ -6,6 +6,7 @@ import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockType;
 import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockTypeImpl;
 import fuzs.diagonalblocks.api.v2.util.EightWayDirection;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
@@ -30,11 +31,42 @@ public record LevelFenceView(BlockGetter blockGetter, DiagonalBlockType diagonal
                 && this.attaches(toBlockState, fromBlockState, dirFromTo);
     }
 
+    /**
+     * The property being set is necessary but <strong>not sufficient</strong>.
+     * {@link net.minecraft.world.level.block.FenceBlock#connectsTo} sets a cardinal side property
+     * against any sturdy full-block face, so a fence standing beside the riser of a staircase --
+     * every staircase -- reports a flat arm it has no rail for. Asking upstream's own predicate with
+     * {@code isSideSolid = false} is exactly vanilla's test with that one branch switched off, so a
+     * neighbouring fence or a connecting fence gate still counts and terrain does not.
+     * <p>
+     * Intercardinals short-circuit: upstream only ever sets a diagonal property fence-to-fence
+     * ({@code StarCollisionBlock#updateDiagonalProperties} runs {@code attachesDiagonallyTo} at both
+     * ends), so there is no sturdy-face case to exclude and no {@link Direction} to pass anyway.
+     * <p>
+     * The direction handed to {@code attachesDirectlyTo} is the <em>neighbour's</em> facing back
+     * toward this block, matching what {@code FenceBlock#getStateForPlacement} passes when it builds
+     * the property in the first place. It only reaches the fence gate check, where the two readings
+     * agree, but disagreeing with vanilla here would be a trap for whoever reads it next.
+     */
     @Override
-    public boolean hasFlatArm(BlockPos blockPos, EightWayDirection direction) {
+    public boolean hasFlatArmToRail(BlockPos blockPos, EightWayDirection direction) {
         BlockState blockState = this.blockStateAt(blockPos);
         BooleanProperty booleanProperty = StarCollisionBlock.PROPERTY_BY_DIRECTION.get(direction);
-        return blockState.hasProperty(booleanProperty) && blockState.getValue(booleanProperty);
+        if (!blockState.hasProperty(booleanProperty) || !blockState.getValue(booleanProperty)) {
+            return false;
+        }
+        if (direction.isIntercardinal()) {
+            return true;
+        }
+        if (!(blockState.getBlock() instanceof DiagonalBlock diagonalBlock)) {
+            // Not ours to interpret, and the property is set: leave the face claimed. Unreachable
+            // from connectsElevated, which establishes both ends through attachable() first.
+            return true;
+        }
+        BlockState neighborBlockState = this.blockStateAt(blockPos.offset(direction.getX(),
+                0,
+                direction.getZ()));
+        return diagonalBlock.attachesDirectlyTo(neighborBlockState, false, direction.getOpposite().toDirection());
     }
 
     /**

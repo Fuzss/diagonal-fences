@@ -157,7 +157,7 @@ public class ElevatedDiagonalFenceBlock extends DiagonalFenceBlock {
 
     private VoxelShape elevatedShape(ElevatedShapeCache shapeCache, BlockState blockState, BlockGetter blockGetter, BlockPos blockPos) {
         int flatIndex = this._getAABBIndex(blockState);
-        return shapeCache.getShape(flatIndex, this.computePitchMask(blockGetter, blockPos, flatIndex));
+        return shapeCache.getShape(flatIndex, this.computePitchMask(blockGetter, blockPos));
     }
 
     /**
@@ -178,11 +178,11 @@ public class ElevatedDiagonalFenceBlock extends DiagonalFenceBlock {
      * earns its place as the intent made explicit, plus the sixteen probes per state it saves across
      * the 6,656 fence states built at startup. Do not delete it because coverage says it is dead.
      */
-    private int computePitchMask(BlockGetter blockGetter, BlockPos blockPos, int flatIndex) {
+    private int computePitchMask(BlockGetter blockGetter, BlockPos blockPos) {
         if (blockGetter == EmptyBlockGetter.INSTANCE) {
             return ElevatedConnections.EMPTY_PITCH_MASK;
         }
         FenceView fenceView = new LevelFenceView(blockGetter, this.diagonalBlockType);
-        return ElevatedConnections.computePitchMask(fenceView, blockPos, flatIndex);
+        return ElevatedConnections.computePitchMask(fenceView, blockPos);
     }
 }

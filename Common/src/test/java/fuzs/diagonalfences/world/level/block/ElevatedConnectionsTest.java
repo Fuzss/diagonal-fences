@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -137,7 +136,7 @@ class ElevatedConnectionsTest {
         BlockPos upper = up(direction);
         FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
                 .withFence(upper)
-                .withFlatArm(ORIGIN, direction);
+                .withFlatArmToRail(ORIGIN, direction);
 
         assertEquals(ElevatedConnections.PITCH_NONE,
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
@@ -153,7 +152,7 @@ class ElevatedConnectionsTest {
         BlockPos upper = up(direction);
         FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
                 .withFence(upper)
-                .withFlatArm(upper, direction.getOpposite());
+                .withFlatArmToRail(upper, direction.getOpposite());
 
         assertEquals(ElevatedConnections.PITCH_NONE,
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
@@ -168,7 +167,7 @@ class ElevatedConnectionsTest {
         BlockPos upper = up(direction);
         FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
                 .withFence(upper)
-                .withFlatArm(ORIGIN, direction.rotateClockWise());
+                .withFlatArmToRail(ORIGIN, direction.rotateClockWise());
 
         assertEquals(ElevatedConnections.PITCH_UP,
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
@@ -194,92 +193,26 @@ class ElevatedConnectionsTest {
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
     }
 
-    // --- flat index fast path -----------------------------------------------------------------
+    // --- flat precedence is about rails, not properties -----------------------------------------
 
     /**
-     * The whole fast path rests on upstream's flat index using one bit per direction at
-     * {@code 1 << directionIndex}. Pinning it here means a change to {@code getHorizontalIndex}
-     * upstream fails loudly instead of silently suppressing every sloped arm.
+     * <strong>The Phase 6 regression, at the seam.</strong> A flat arm only suppresses a pitch when
+     * it reaches another rail. This view records no arm at all toward {@code direction} -- which is
+     * what a fence standing against the riser of a staircase looks like once
+     * {@code LevelFenceView#hasFlatArmToRail} has told terrain and rails apart -- so the slope must
+     * survive.
+     * <p>
+     * Phases 1-5 also had a flat-index fast path here that skipped a direction whenever the block's
+     * own side property was set, before the view was consulted at all. It is gone, and this is the
+     * test that says why: the property alone is not the question being asked.
      */
     @ParameterizedTest
     @EnumSource(EightWayDirection.class)
-    void hasFlatArmMatchesUpstreamsHorizontalIndex(EightWayDirection direction) {
-        int flatIndex = direction.getHorizontalIndex();
-        assertTrue(ElevatedConnections.hasFlatArm(flatIndex, direction));
-        for (EightWayDirection other : EightWayDirection.values()) {
-            if (other != direction) {
-                assertFalse(ElevatedConnections.hasFlatArm(flatIndex, other),
-                        "direction " + other + " read a bit belonging to " + direction);
-            }
-        }
-        assertFalse(ElevatedConnections.hasFlatArm(ElevatedConnections.NO_FLAT_ARMS, direction));
-    }
-
-    /**
-     * A flat arm known from the index must kill the up arm <em>and</em> the down arm, because
-     * {@code connectsElevated} suppresses on either end and self is the lower end of one candidate
-     * and the upper end of the other. Skipping only one of the two would leave a one-sided arm.
-     */
-    @ParameterizedTest
-    @EnumSource(EightWayDirection.class)
-    void aFlatArmInTheIndexSuppressesBothTheUpAndTheDownArm(EightWayDirection direction) {
-        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
-                .withFence(up(direction))
-                .withFence(down(direction));
+    void aFlatArmThatReachesNoRailDoesNotSuppress(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN).withFence(up(direction));
         assertEquals(ElevatedConnections.PITCH_UP,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView,
-                        ORIGIN,
-                        ElevatedConnections.NO_FLAT_ARMS), direction),
-                "without the flat arm this direction should slope, or the test proves nothing");
-
-        int flatIndex = direction.getHorizontalIndex();
-        assertEquals(ElevatedConnections.EMPTY_PITCH_MASK,
-                ElevatedConnections.computePitchMask(fenceView, ORIGIN, flatIndex),
-                "a flat arm toward " + direction + " must suppress both candidates there");
-
-        // and only there -- the other seven directions still resolve normally
-        FakeFenceView allNeighbors = new FakeFenceView().withFence(ORIGIN);
-        for (EightWayDirection other : EightWayDirection.values()) {
-            allNeighbors.withFence(up(other));
-        }
-        int pitchMask = ElevatedConnections.computePitchMask(allNeighbors, ORIGIN, flatIndex);
-        for (EightWayDirection other : EightWayDirection.values()) {
-            assertEquals(other == direction ? ElevatedConnections.PITCH_NONE : ElevatedConnections.PITCH_UP,
-                    ElevatedConnections.pitchFor(pitchMask, other),
-                    "direction " + other + " was affected by a flat arm toward " + direction);
-        }
-    }
-
-    /**
-     * The fast path is an optimisation, so it must never change an answer. Exhaustive over all 256
-     * indices, against a view whose flat arms agree with the index -- which is the only case
-     * production ever passes, since the index is derived from the very block state being queried.
-     */
-    @Test
-    void theFlatIndexOverloadAgreesWithTheViewDrivenOneForEveryIndex() {
-        for (int flatIndex = 0; flatIndex < 1 << ElevatedConnections.FLAT_INDEX_WIDTH; flatIndex++) {
-            FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN);
-            for (EightWayDirection direction : EightWayDirection.values()) {
-                fenceView.withFence(up(direction)).withFence(down(direction));
-                if (ElevatedConnections.hasFlatArm(flatIndex, direction)) {
-                    fenceView.withFlatArm(ORIGIN, direction);
-                }
-            }
-            assertEquals(ElevatedConnections.computePitchMask(fenceView, ORIGIN),
-                    ElevatedConnections.computePitchMask(fenceView, ORIGIN, flatIndex),
-                    "the two overloads diverged at flat index " + flatIndex);
-        }
-    }
-
-    @Test
-    void computePitchMaskRejectsAFlatIndexOutsideEightBits() {
-        FenceView fenceView = new FakeFenceView().withFence(ORIGIN);
-        assertThrows(IllegalArgumentException.class,
-                () -> ElevatedConnections.computePitchMask(fenceView, ORIGIN, -1));
-        assertThrows(IllegalArgumentException.class,
-                () -> ElevatedConnections.computePitchMask(fenceView,
-                        ORIGIN,
-                        1 << ElevatedConnections.FLAT_INDEX_WIDTH));
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction),
+                "nothing claims this face, so the arm above it must still be reached");
     }
 
     /**

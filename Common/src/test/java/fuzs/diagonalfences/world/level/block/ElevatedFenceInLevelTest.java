@@ -4,9 +4,11 @@ import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockType;
 import fuzs.diagonalblocks.api.v2.block.type.DiagonalBlockTypes;
 import fuzs.diagonalblocks.api.v2.util.EightWayDirection;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.CrossCollisionBlock;
+import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -168,13 +170,125 @@ class ElevatedFenceInLevelTest {
                 "the upper end must fall back toward " + direction.getOpposite());
     }
 
+    // --- the Phase 6 regression: a railing on a staircase made of solid blocks ------------------
+
+    /**
+     * <strong>This is the test the bug walked through.</strong> Phases 1-5 shipped with no sloped arm
+     * ever forming in a real world, and every test above passed the whole time, because every fence
+     * in them floats in an empty {@link FakeLevel} with all four side properties false.
+     * <p>
+     * A staircase is made of solid blocks. The upper fence stands on a riser, and that riser is a
+     * sturdy full block directly east of the lower fence -- so
+     * {@code FenceBlock#connectsTo(state, isSideSolid, direction)} sets {@code east} on the lower
+     * fence against the <em>dirt</em>, not against any rail:
+     * <pre>
+     * y+1:        [F2]
+     * y  :  [F1]  [riser]      F1.east == true, because the riser is sturdy
+     * </pre>
+     * Reading that property as "this face already carries an arm" suppressed the pitch on every
+     * staircase anyone could build. The arm buried in the riser is invisible and its collision box is
+     * inside a full cube; it occupies nothing the sloped arm wants.
+     * <p>
+     * Nothing here is contrived: {@code east=true} is exactly the state the game computes for a fence
+     * placed against a block, and it is set explicitly only because {@link FakeLevel} does not run
+     * {@code getStateForPlacement}.
+     */
+    @Test
+    void slopesUpAlongsideAStairRunBuiltFromSolidBlocks() {
+        BlockState lowerAgainstRiser = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerAgainstRiser)
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerAgainstRiser,
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                lowerAgainstRiser.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "a fence abutting the riser it climbs must still slope up to the fence above it");
+    }
+
+    /**
+     * The upper end of the same staircase, which resolves the identical {@code (lower, upper, EAST)}
+     * triple through {@code connectsElevated} and so died on the identical check. Asserting only the
+     * lower end would leave half the bug in place and produce a one-sided arm.
+     */
+    @Test
+    void theUpperFenceOfAStairRunFallsBackDownTheSlope() {
+        BlockPos upper = ORIGIN.offset(1, 1, 0);
+        BlockState lowerAgainstRiser = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerAgainstRiser)
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(upper, fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        pitchMask(EightWayDirection.WEST, ElevatedConnections.PITCH_DOWN)),
+                collisionShapeAt(level, upper),
+                "the fence on the step above must fall back west to meet the arm rising to it");
+    }
+
+    /**
+     * A diagonal railing climbing the same staircase: the lower fence is boxed in by terrain on both
+     * of the cardinal faces that flank its arm, and must slope over the corner regardless.
+     * <p>
+     * <strong>This is a scenario control, not a regression guard</strong> -- unlike the two tests
+     * above it also passes against the pre-fix code, because that read only the {@code south_east}
+     * property and nothing here sets it. It is kept because it is the build the feature is for and
+     * nothing else covers it, and it is labelled so nobody mistakes it for the test holding the fix
+     * in place.
+     * <p>
+     * The reason {@link LevelFenceView#hasFlatArmToRail} can short-circuit intercardinals to
+     * {@code true} is the same reason no test can kill that branch: upstream sets a diagonal
+     * property only after {@code attachesDiagonallyTo} passes at both ends, which requires
+     * {@link BlockTags#FENCES}. An intercardinal property therefore already implies a rail, and
+     * there is no sturdy-face case for it to exclude.
+     */
+    @Test
+    void slopesDiagonallyAlongsideAStairRunBuiltFromSolidBlocks() {
+        BlockState lowerBoxedIn = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE)
+                .setValue(CrossCollisionBlock.SOUTH, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerBoxedIn)
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(0, 0, 1), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 0, 1), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 1), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerBoxedIn,
+                        pitchMask(EightWayDirection.SOUTH_EAST, ElevatedConnections.PITCH_UP)),
+                lowerBoxedIn.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "cardinal arms into terrain must not suppress the diagonal slope over it");
+    }
+
+    /**
+     * A fence gate is a rail, so it keeps its suppressing power. Without this the fix would read as
+     * "only a fence counts", and a run that steps up beside a gate would grow an arm straight through
+     * it.
+     */
+    @Test
+    void aConnectingFenceGateStillSuppressesTheSlope() {
+        BlockState lowerAgainstGate = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        BlockState gate = Blocks.OAK_FENCE_GATE.defaultBlockState()
+                .setValue(FenceGateBlock.FACING, Direction.NORTH);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerAgainstGate)
+                .withBlock(ORIGIN.offset(1, 0, 0), gate)
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerAgainstGate,
+                        ElevatedConnections.EMPTY_PITCH_MASK),
+                lowerAgainstGate.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "a gate this fence genuinely connects to occupies the face, exactly as a fence does");
+    }
+
     // --- what must NOT slope ---------------------------------------------------------------------
 
     /**
-     * Flat wins. The fence already carries a flat east arm to the fence beside it, so the fence up and
-     * to the east gets nothing -- that face is taken. This also exercises the fast path in
-     * {@link ElevatedConnections#computePitchMask(FenceView, BlockPos, int)}, which skips a direction
-     * outright when the caller's flat index already claims it.
+     * Flat wins -- when the flat arm reaches a real rail. The fence already carries a flat east arm to
+     * the fence beside it, so the fence up and to the east gets nothing: that face is taken.
+     * <p>
+     * Contrast {@link #slopesUpAlongsideAStairRunBuiltFromSolidBlocks}, which is the same block state
+     * with a solid block where this one has a fence. Those two are the whole Phase 6 fix; if either
+     * can be made to pass by reading the side property alone, the fix has been undone.
      */
     @Test
     void aFlatArmSuppressesTheSlopeOnThatFace() {
@@ -189,14 +303,10 @@ class ElevatedFenceInLevelTest {
     }
 
     /**
-     * The other end's flat arm suppresses the slope too, and this is the only test that reaches
-     * {@link LevelFenceView#hasFlatArm} at all.
-     * <p>
-     * {@link #aFlatArmSuppressesTheSlopeOnThatFace} does not: when the queried fence itself carries
-     * the flat arm, {@code computePitchMask}'s flat-index fast path skips that direction before the
-     * view is ever asked. It is the <em>neighbour's</em> flat arm that has to come out of the level,
-     * and this is the shape it takes in a real build -- a rising run arriving at a landing that
-     * already runs flat.
+     * The other end's flat arm suppresses the slope too. In a real build this is a rising run
+     * arriving at a landing that already runs flat, and it is the case that would break first if
+     * {@code connectsElevated} were ever rewritten as "the lower block looks up, the upper block
+     * looks down" -- the suppressing arm belongs to only one of the two ends.
      */
     @Test
     void aFlatArmOnTheNeighbourAlsoSuppressesTheSlope() {

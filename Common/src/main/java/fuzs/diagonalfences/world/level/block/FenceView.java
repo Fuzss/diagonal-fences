@@ -13,7 +13,7 @@ import net.minecraft.core.BlockPos;
  * datapack-loaded and absent after {@code Bootstrap.bootStrap()}.
  * <p>
  * <strong>Positions handed to these methods are valid for the duration of the call only.</strong>
- * {@link ElevatedConnections#computePitchMask(FenceView, BlockPos, int)} runs on the collision path
+ * {@link ElevatedConnections#computePitchMask(FenceView, BlockPos)} runs on the collision path
  * and reuses one {@link net.minecraft.core.BlockPos.MutableBlockPos} for all sixteen neighbour
  * probes rather than allocating sixteen positions per query. An implementation may read a position
  * and may look one up in a map -- {@code MutableBlockPos} inherits {@link net.minecraft.core.Vec3i}
@@ -37,12 +37,24 @@ public interface FenceView {
     boolean attachable(BlockPos from, BlockPos to, EightWayDirection dirFromTo);
 
     /**
-     * Whether the block at {@code blockPos} already carries a flat (same height) arm toward
-     * {@code direction}. A flat arm already occupies that face, so it suppresses any pitch there.
+     * Whether the block at {@code blockPos} carries a flat (same height) arm toward
+     * {@code direction} that reaches <strong>another rail</strong> -- a fence, or a fence gate
+     * facing the right way. Such an arm already occupies that face, so it suppresses any pitch
+     * there.
+     * <p>
+     * <strong>"To a rail" is the whole point, and it is not a refinement.</strong> A vanilla fence
+     * sets its side property against <em>any sturdy full-block face</em>, not only against another
+     * fence -- so the lower fence of every staircase carries a flat arm into the riser block it
+     * climbs. Reading the raw property here suppressed the pitch on every staircase anyone has ever
+     * built, which is the one situation this feature exists for. See {@code LevelFenceView} for the
+     * predicate that draws the line, and {@code gotchas.md} (2026-08-26) for how it got shipped.
+     * <p>
+     * An arm buried in a solid block occupies nothing the sloped arm wants: it is invisible inside
+     * the neighbour, and its collision box is already inside a full cube.
      *
      * @param blockPos  the position to inspect
      * @param direction the arm direction to inspect
-     * @return whether a flat arm is present
+     * @return whether a flat arm to another rail is present
      */
-    boolean hasFlatArm(BlockPos blockPos, EightWayDirection direction);
+    boolean hasFlatArmToRail(BlockPos blockPos, EightWayDirection direction);
 }
