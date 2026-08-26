@@ -10,6 +10,9 @@ import net.minecraft.client.renderer.block.model.multipart.Condition;
 import net.minecraft.client.renderer.block.model.multipart.KeyValueCondition;
 import net.minecraft.client.renderer.block.model.multipart.Selector;
 import net.minecraft.client.resources.model.ModelBaker;
+import net.minecraft.core.Direction;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -210,5 +213,54 @@ class FenceArmVariantsTest {
         Selector first = fenceMultiPart().selectors().getFirst();
         assertTrue(first.condition().isEmpty(), "the first selector is not the unconditional post");
         assertNotNull(first.variant(), "the post has no variant");
+    }
+
+    /**
+     * The cull-face buckets a baked part's quads are collected from.
+     * <p>
+     * These exist because the collection <strong>must be able to hold {@code null}</strong>, and the
+     * obvious way to build it cannot. Built with {@code List.copyOf}, this threw
+     * {@code NullPointerException} out of a static initializer on every fence model ever
+     * transformed, and no test could see it: the constant used to live in the Fabric module, which
+     * has no test source set at all.
+     */
+    @Nested
+    class QuadCullFaces {
+
+        @Test
+        void holdsTheNullBucketThatCarriesTheUnculledQuads() {
+            // The reason this collection cannot be an immutable one. Reverting to List.of/copyOf
+            // fails the whole class at <clinit>, which is precisely how it failed in the game.
+            assertTrue(FenceArmVariants.QUAD_CULL_FACES.contains(null),
+                    "the null bucket holds the quads that are never culled -- most of a fence arm");
+        }
+
+        @Test
+        void holdsEverySixCullFacesExactlyOnce() {
+            List<@Nullable Direction> faces = FenceArmVariants.QUAD_CULL_FACES;
+            assertEquals(Direction.values().length + 1, faces.size(), "six cull faces plus the null bucket");
+            assertEquals(faces.size(), new HashSet<>(faces).size(), "no bucket collected twice");
+            for (Direction direction : Direction.values()) {
+                assertTrue(faces.contains(direction), "missing cull face " + direction);
+            }
+        }
+
+        @Test
+        void iteratesWithoutThrowingOnTheNullEntry() {
+            // How the constant is actually consumed: iterated, never queried. An immutable copy
+            // would survive neither this nor construction.
+            int seen = 0;
+            for (Direction ignored : FenceArmVariants.QUAD_CULL_FACES) {
+                seen++;
+            }
+            assertEquals(Direction.values().length + 1, seen);
+        }
+
+        @Test
+        void refusesMutation() {
+            assertThrows(UnsupportedOperationException.class,
+                    () -> FenceArmVariants.QUAD_CULL_FACES.add(Direction.UP),
+                    "a shared static collection must not be writable by its callers");
+        }
     }
 }

@@ -9,8 +9,12 @@ import net.minecraft.client.renderer.block.model.multipart.CombinedCondition;
 import net.minecraft.client.renderer.block.model.multipart.Condition;
 import net.minecraft.client.renderer.block.model.multipart.KeyValueCondition;
 import net.minecraft.client.renderer.block.model.multipart.Selector;
+import net.minecraft.core.Direction;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -37,9 +41,32 @@ public final class FenceArmVariants {
     public static final int ARM_COUNT = 16;
     /** Cardinal sides a fence multipart is expected to declare, one per horizontal face. */
     public static final int EXPECTED_CARDINAL_ARMS = 4;
+    /**
+     * Every key {@code BlockModelPart#getQuads} buckets its quads under, <strong>including
+     * {@code null}</strong>, which holds the quads that are never culled -- on a fence arm that is
+     * most of them. Iterate this to collect a part's whole geometry; miss the {@code null} bucket and
+     * an arm comes out nearly empty.
+     * <p>
+     * <strong>It must be a null-tolerant collection, and that is not a detail.</strong> Built with
+     * {@link java.util.List#copyOf} instead, this threw {@code NullPointerException} out of a static
+     * initializer on every fence model ever transformed -- see {@code gotchas.md} (2026-08-26). The
+     * immutable collections reject a null element on construction <em>and</em> throw from
+     * {@code contains(null)}, so neither {@code List.of} nor {@code List.copyOf} can ever hold this.
+     * <p>
+     * Lives in Common rather than beside its only caller for the reason this class exists: it touches
+     * nothing but {@link Direction}, so it is the rare piece of the render path a headless test can
+     * load.
+     */
+    public static final List<@Nullable Direction> QUAD_CULL_FACES = quadCullFaces();
 
     private FenceArmVariants() {
         // static utility
+    }
+
+    private static List<@Nullable Direction> quadCullFaces() {
+        List<@Nullable Direction> faces = new ArrayList<>(Arrays.asList(Direction.values()));
+        faces.add(null);
+        return Collections.unmodifiableList(faces);
     }
 
     /**

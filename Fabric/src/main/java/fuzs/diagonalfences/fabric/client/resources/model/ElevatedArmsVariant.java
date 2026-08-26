@@ -17,10 +17,6 @@ import net.minecraft.client.resources.model.ModelBaker;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -59,11 +55,6 @@ public record ElevatedArmsVariant(Map<EightWayDirection, BlockStateModel.Unbaked
      * {@code collectParts} if that ever shows up in a report; do not fix it speculatively.
      */
     static final long BAKE_SEED = 42L;
-    /**
-     * {@link BlockModelPart#getQuads} is keyed by cull face, and {@code null} holds the quads that
-     * are never culled. Missing the {@code null} bucket loses most of a fence arm.
-     */
-    static final Collection<Direction> VALID_QUAD_FACES = quadFaces();
 
     public ElevatedArmsVariant {
         Objects.requireNonNull(diagonalBlockType, "diagonal block type is null");
@@ -71,12 +62,6 @@ public record ElevatedArmsVariant(Map<EightWayDirection, BlockStateModel.Unbaked
         if (armVariants.isEmpty()) {
             throw new IllegalArgumentException("no arm variants; there would be nothing to draw");
         }
-    }
-
-    private static Collection<Direction> quadFaces() {
-        List<Direction> faces = new ArrayList<>(Arrays.asList(Direction.values()));
-        faces.add(null);
-        return List.copyOf(faces);
     }
 
     @Override
@@ -136,7 +121,7 @@ public record ElevatedArmsVariant(Map<EightWayDirection, BlockStateModel.Unbaked
         MutableMesh mutableMesh = renderer.mutableMesh();
         QuadEmitter emitter = mutableMesh.emitter();
         for (BlockModelPart blockModelPart : armModel.collectParts(RandomSource.create(BAKE_SEED))) {
-            for (Direction face : VALID_QUAD_FACES) {
+            for (Direction face : FenceArmVariants.QUAD_CULL_FACES) {
                 for (BakedQuad bakedQuad : blockModelPart.getQuads(face)) {
                     emitter.fromBakedQuad(bakedQuad);
                     for (int vertexIndex = 0; vertexIndex < 4; vertexIndex++) {
