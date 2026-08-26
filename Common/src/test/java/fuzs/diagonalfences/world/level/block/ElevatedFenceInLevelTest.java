@@ -236,11 +236,9 @@ class ElevatedFenceInLevelTest {
      * nothing else covers it, and it is labelled so nobody mistakes it for the test holding the fix
      * in place.
      * <p>
-     * The reason {@link LevelFenceView#hasFlatArmToRail} can short-circuit intercardinals to
-     * {@code true} is the same reason no test can kill that branch: upstream sets a diagonal
-     * property only after {@code attachesDiagonallyTo} passes at both ends, which requires
-     * {@link BlockTags#FENCES}. An intercardinal property therefore already implies a rail, and
-     * there is no sturdy-face case for it to exclude.
+     * Phase 9 removed flat precedence entirely, so the cardinal arms into terrain here no longer
+     * have anything to suppress with. The scenario is kept because it is the build the feature is
+     * for; it just guards less than it used to.
      */
     @Test
     void slopesDiagonallyAlongsideAStairRunBuiltFromSolidBlocks() {
@@ -260,12 +258,19 @@ class ElevatedFenceInLevelTest {
     }
 
     /**
-     * A fence gate is a rail, so it keeps its suppressing power. Without this the fix would read as
-     * "only a fence counts", and a run that steps up beside a gate would grow an arm straight through
-     * it.
+     * <strong>Phase 9, and the sharpest edge of it.</strong> A fence gate no longer suppresses the
+     * slope either, because nothing does -- so a run stepping up beside a gate grows an arm across
+     * the gate's own space.
+     * <p>
+     * This is a real visual artefact rather than a harmless overlap, and it is the one case where
+     * dropping precedence costs something: the equivalent arm through a <em>solid</em> riser is
+     * buried inside a full cube and invisible, while a gate is mostly open air and the arm will be
+     * seen crossing it. Recorded deliberately in {@code decisions.md} as accepted-and-watched. If
+     * playtesting rejects it, the narrow fix is to restore suppression for gates alone -- not to
+     * reinstate flat precedence wholesale.
      */
     @Test
-    void aConnectingFenceGateStillSuppressesTheSlope() {
+    void aConnectingFenceGateNoLongerSuppressesTheSlope() {
         BlockState lowerAgainstGate = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
         BlockState gate = Blocks.OAK_FENCE_GATE.defaultBlockState()
                 .setValue(FenceGateBlock.FACING, Direction.NORTH);
@@ -275,50 +280,85 @@ class ElevatedFenceInLevelTest {
 
         assertSame(expectedShape(fenceBlock.collisionShapes(),
                         lowerAgainstGate,
-                        ElevatedConnections.EMPTY_PITCH_MASK),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 lowerAgainstGate.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
-                "a gate this fence genuinely connects to occupies the face, exactly as a fence does");
+                "the gate occupies the flat face, but the flat face no longer vetoes the slope");
     }
 
-    // --- what must NOT slope ---------------------------------------------------------------------
+    // --- a flat arm suppresses nothing (Phase 9) -------------------------------------------------
 
     /**
-     * Flat wins -- when the flat arm reaches a real rail. The fence already carries a flat east arm to
-     * the fence beside it, so the fence up and to the east gets nothing: that face is taken.
+     * <strong>The reported build, and the test that fails if Phase 9 is reverted.</strong> This is
+     * byte-for-byte the fixture that used to assert {@code EMPTY_PITCH_MASK}: a fence carrying a
+     * real flat east arm to a real fence beside it, with a third fence up and east. The face is
+     * occupied and the slope forms anyway.
      * <p>
-     * Contrast {@link #slopesUpAlongsideAStairRunBuiltFromSolidBlocks}, which is the same block state
-     * with a solid block where this one has a fence. Those two are the whole Phase 6 fix; if either
-     * can be made to pass by reading the side property alone, the fix has been undone.
+     * Contrast {@link #slopesUpAlongsideAStairRunBuiltFromSolidBlocks}, the same block state with
+     * terrain where this one has a fence. Under Phase 6 those two differed; the whole point of
+     * Phase 9 is that they no longer do, which is what "any fence one up and one along should
+     * connect" means when written out.
      */
     @Test
-    void aFlatArmSuppressesTheSlopeOnThatFace() {
+    void aFlatArmOnTheSameFaceStillGrowsASlope() {
         BlockState withFlatEastArm = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
         FakeLevel level = new FakeLevel().withBlock(ORIGIN, withFlatEastArm)
                 .withBlock(ORIGIN.offset(1, 0, 0), fence())
                 .withBlock(ORIGIN.offset(1, 1, 0), fence());
 
-        assertSame(expectedShape(fenceBlock.collisionShapes(), withFlatEastArm, ElevatedConnections.EMPTY_PITCH_MASK),
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        withFlatEastArm,
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 withFlatEastArm.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
-                "a face already carrying a flat arm must not also grow a sloped one");
+                "a face carrying a flat rail must still climb to the fence above that rail");
     }
 
     /**
-     * The other end's flat arm suppresses the slope too. In a real build this is a rising run
-     * arriving at a landing that already runs flat, and it is the case that would break first if
+     * The far end's flat arm does not block it either. In a real build this is a rising run arriving
+     * at a landing that already runs flat, and it is the case that would break first if
      * {@code connectsElevated} were ever rewritten as "the lower block looks up, the upper block
-     * looks down" -- the suppressing arm belongs to only one of the two ends.
+     * looks down" -- the flat arm belongs to only one of the two ends, so an asymmetric rule shows
+     * up here as a one-sided arm.
      */
     @Test
-    void aFlatArmOnTheNeighbourAlsoSuppressesTheSlope() {
+    void theNeighboursFlatArmDoesNotBlockTheSlopeEither() {
         BlockPos upper = ORIGIN.offset(1, 1, 0);
         BlockState upperRunningFlatWest = fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
         FakeLevel level = new FakeLevel().withBlock(ORIGIN, fence())
                 .withBlock(upper, upperRunningFlatWest)
                 .withBlock(upper.offset(-1, 0, 0), fence());
 
-        assertSame(expectedShape(fenceBlock.collisionShapes(), ElevatedConnections.EMPTY_PITCH_MASK),
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 collisionShapeAt(level, ORIGIN),
-                "the neighbour's face is already taken by a flat arm, so no sloped arm may reach it");
+                "the far end's occupied face must not veto the arm reaching it");
+    }
+
+    /**
+     * Two adjacent two-tall fence columns, asserted through a real level: they cross.
+     * <p>
+     * <strong>Stated to the owner before it was written, and wanted.</strong> It is the most
+     * conspicuous consequence of dropping precedence and the thing most likely to be mistaken for a
+     * bug later, so it is pinned at both ends rather than left to be rediscovered.
+     */
+    @Test
+    void twoAdjacentTwoTallColumnsCross() {
+        BlockPos nearTop = ORIGIN.above();
+        BlockState nearBottomState = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, nearBottomState)
+                .withBlock(nearTop, fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE))
+                .withBlock(ORIGIN.offset(1, 0, 0), fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE))
+                .withBlock(ORIGIN.offset(1, 1, 0), fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE));
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        nearBottomState,
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                nearBottomState.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "the lower fence of the near column rises to the top of the far one");
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_DOWN)),
+                collisionShapeAt(level, nearTop),
+                "the upper fence of the near column falls to the bottom of the far one -- the other half of the X");
     }
 
     /**

@@ -126,53 +126,6 @@ class ElevatedConnectionsTest {
                 "arm exists at the lower end but not at the upper end");
     }
 
-    /**
-     * The same property under flat precedence, which is where the two ends are most likely to
-     * disagree: the suppressing flat arm belongs to only one of them.
-     */
-    @ParameterizedTest
-    @EnumSource(EightWayDirection.class)
-    void suppressionIsSymmetricAtBothEnds(EightWayDirection direction) {
-        BlockPos upper = up(direction);
-        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
-                .withFence(upper)
-                .withFlatArmToRail(ORIGIN, direction);
-
-        assertEquals(ElevatedConnections.PITCH_NONE,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
-        assertEquals(ElevatedConnections.PITCH_NONE,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, upper),
-                        direction.getOpposite()),
-                "the upper end kept an arm the lower end suppressed");
-    }
-
-    @ParameterizedTest
-    @EnumSource(EightWayDirection.class)
-    void aFlatArmAtTheUpperEndAlsoSuppressesBothEnds(EightWayDirection direction) {
-        BlockPos upper = up(direction);
-        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
-                .withFence(upper)
-                .withFlatArmToRail(upper, direction.getOpposite());
-
-        assertEquals(ElevatedConnections.PITCH_NONE,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
-        assertEquals(ElevatedConnections.PITCH_NONE,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, upper),
-                        direction.getOpposite()));
-    }
-
-    @ParameterizedTest
-    @EnumSource(EightWayDirection.class)
-    void aFlatArmInAnotherDirectionDoesNotSuppress(EightWayDirection direction) {
-        BlockPos upper = up(direction);
-        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
-                .withFence(upper)
-                .withFlatArmToRail(ORIGIN, direction.rotateClockWise());
-
-        assertEquals(ElevatedConnections.PITCH_UP,
-                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
-    }
-
     @Test
     void aSameHeightOrStackedNeighborIsNotASlopedArm() {
         FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
@@ -193,26 +146,65 @@ class ElevatedConnectionsTest {
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction));
     }
 
-    // --- flat precedence is about rails, not properties -----------------------------------------
+    // --- a flat arm suppresses nothing (Phase 9) ------------------------------------------------
 
     /**
-     * <strong>The Phase 6 regression, at the seam.</strong> A flat arm only suppresses a pitch when
-     * it reaches another rail. This view records no arm at all toward {@code direction} -- which is
-     * what a fence standing against the riser of a staircase looks like once
-     * {@code LevelFenceView#hasFlatArmToRail} has told terrain and rails apart -- so the slope must
-     * survive.
+     * <strong>Phase 9.</strong> A flat arm on a face used to veto a pitch on that face. It no longer
+     * does, so at this seam the rule is simply attachability and there is nothing left to suppress
+     * with -- {@link FakeFenceView} cannot even express a flat arm any more.
      * <p>
-     * Phases 1-5 also had a flat-index fast path here that skipped a direction whenever the block's
-     * own side property was set, before the view was consulted at all. It is gone, and this is the
-     * test that says why: the property alone is not the question being asked.
+     * What is worth pinning here is the <em>shape</em> that change produces, because it is the part
+     * an onlooker is most likely to mistake for a bug and "fix": two adjacent two-tall fence columns
+     * cross. The lower fence rises to the far upper one while the upper fence falls to the far lower
+     * one, and both arms are real. Removing precedence without meaning to allow this would be a
+     * misunderstanding of the change, not a refinement of it.
+     *
+     * @see ElevatedConnections
+     */
+    @Test
+    void twoAdjacentTwoTallColumnsCross() {
+        BlockPos nearTop = ORIGIN.above();
+        BlockPos farBottom = ORIGIN.offset(1, 0, 0);
+        BlockPos farTop = ORIGIN.offset(1, 1, 0);
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(nearTop)
+                .withFence(farBottom)
+                .withFence(farTop);
+
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN),
+                        EightWayDirection.EAST),
+                "the near lower fence must rise to the far upper one");
+        assertEquals(ElevatedConnections.PITCH_DOWN,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, nearTop),
+                        EightWayDirection.EAST),
+                "the near upper fence must fall to the far lower one -- this is the other half of the X");
+        // And the same X read from the far column, which is the symmetry property applied to it.
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, farBottom),
+                        EightWayDirection.WEST));
+        assertEquals(ElevatedConnections.PITCH_DOWN,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, farTop),
+                        EightWayDirection.WEST));
+    }
+
+    /**
+     * The reported build, at this seam: a fence whose face already carries a flat rail must still
+     * reach the fence one up and one along. The fake records only attachability, so this is the
+     * upper half of {@link #twoAdjacentTwoTallColumnsCross} isolated -- the assertion that the flat
+     * neighbour's presence changes nothing lives in {@code ElevatedFenceInLevelTest}, where a real
+     * side property exists to be ignored.
      */
     @ParameterizedTest
     @EnumSource(EightWayDirection.class)
-    void aFlatArmThatReachesNoRailDoesNotSuppress(EightWayDirection direction) {
-        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN).withFence(up(direction));
+    void aFlatNeighbourDoesNotBlockTheArmAboveIt(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(ORIGIN.offset(direction.getX(), 0, direction.getZ()))
+                .withFence(up(direction));
+
         assertEquals(ElevatedConnections.PITCH_UP,
                 ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction),
-                "nothing claims this face, so the arm above it must still be reached");
+                "a rail on the flat face must not stop the arm climbing over it");
     }
 
     /**

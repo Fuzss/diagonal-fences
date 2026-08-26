@@ -13,6 +13,17 @@ import net.minecraft.core.BlockPos;
  * The pitch mask is 16 bits, two per direction, at {@code 2 * } the direction's index in the
  * existing 8-bit flat index. Sharing that indexing lets a shape be keyed as
  * {@code flatIndex | pitchMask << 8}.
+ * <p>
+ * <strong>A flat arm on a face does not suppress a pitch on that face.</strong> It used to, on the
+ * strength of an analogy to upstream's {@code isFreeForDiagonalProperty}; the analogy was wrong
+ * twice over. The two arms overlap only inside the post's own 4x4 footprint -- the same reasoning
+ * already accepted for arms buried in a riser block -- and suppressing on that basis is what stopped
+ * a railing climbing past a two-tall fence column, which is the shape the feature exists to draw.
+ * <p>
+ * <strong>Consequence, and it is intended:</strong> two adjacent two-tall columns grow an X. The
+ * lower fence rises to the far upper one while the upper fence falls to the far lower one. Each
+ * direction still carries at most one arm, because {@link #computePitchMask} takes the first of
+ * up-then-down.
  */
 public final class ElevatedConnections {
     /** No sloped arm in this direction. */
@@ -68,12 +79,14 @@ public final class ElevatedConnections {
     }
 
     /**
-     * The single symmetric connection predicate.
+     * The single symmetric connection predicate: two fences one block up and one step along attach,
+     * full stop.
      * <p>
      * Both ends of a candidate arm resolve their pitch through this one method with identical
      * arguments -- {@code lower} is always the lower position. Writing it as "the lower block looks
-     * up, the upper block looks down" instead lets flat precedence diverge at the two ends, which
-     * produces an arm that exists at one end only.
+     * up, the upper block looks down" instead lets the two ends diverge, which produces an arm that
+     * exists at one end only. That risk is smaller now than it was, but the shape of the call is
+     * kept because it is what makes the symmetry property testable.
      *
      * @param fenceView       the world view
      * @param lower           the lower end of the candidate arm
@@ -88,18 +101,9 @@ public final class ElevatedConnections {
             throw new IllegalArgumentException(
                     "positions " + lower + " and " + upper + " are not a " + dirLowerToUpper + " arm rising by one");
         }
-        // Attachable first, and the order is a real saving rather than a style choice: for nearly
-        // every fence in a world the position one up and one along is air, so this returns false
-        // after two block lookups and the flat-arm tests -- which now cost a neighbour lookup each
-        // -- never run. It is a && chain either way, so nothing about the answer changes.
-        if (!fenceView.attachable(lower, upper, dirLowerToUpper)) {
-            return false;
-        }
-        // Flat connections win, at either end -- but only a flat arm that actually reaches another
-        // rail; see FenceView#hasFlatArmToRail. Both checks key off the same (lower, upper,
-        // direction) triple, so the result stays symmetric.
-        return !fenceView.hasFlatArmToRail(lower, dirLowerToUpper) && !fenceView.hasFlatArmToRail(upper,
-                dirLowerToUpper.getOpposite());
+        // Attachability is the whole rule. A flat arm on the same face used to veto the pitch here;
+        // see the class javadoc for why that went away.
+        return fenceView.attachable(lower, upper, dirLowerToUpper);
     }
 
     /**
