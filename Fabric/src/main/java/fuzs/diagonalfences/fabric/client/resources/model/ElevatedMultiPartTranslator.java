@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Injects the sloped arm selector into every fence's multipart model, and repairs the geometry key
@@ -32,6 +33,23 @@ import java.util.Optional;
  * world. Re-check it on every Minecraft update.
  */
 public class ElevatedMultiPartTranslator extends MultiPartTranslator {
+    /**
+     * Guards a single INFO line the first time this translator is consulted for a fence model.
+     * <p>
+     * <strong>This is not decoration.</strong> Every failure this feature has had was a silent
+     * no-op that a green test suite could not see, and one of them was this class never being called
+     * at all -- indistinguishable, in a log, from it running fine. One line makes "did the render
+     * half run?" a grep rather than a rebuild. Model transformation happens off the render thread,
+     * hence the atomic rather than a plain boolean.
+     * <p>
+     * <strong>It logs before the append, not after, and that ordering is the whole point.</strong>
+     * Placed after it, the first thing that threw from the append -- {@code ElevatedArmsVariant}
+     * failing to class-init, on every model -- produced a log with no line in it, which reads
+     * exactly like the translator never running. It says "consulted", not "succeeded", because that
+     * is all it can honestly claim from this side of the call; a failure past this point is loud on
+     * its own.
+     */
+    private static final AtomicBoolean LOGGED_FIRST_APPLY = new AtomicBoolean();
 
     public ElevatedMultiPartTranslator(DiagonalBlockType diagonalBlockType) {
         super(diagonalBlockType);
@@ -70,6 +88,10 @@ public class ElevatedMultiPartTranslator extends MultiPartTranslator {
         // Unconditional, and it has to be: MultiPartModel picks its submodels once per block state
         // and caches them, while the pitch is derived from neighbours and lives in no block state.
         // Appended last, so it never becomes the selector particleSprite reads.
+        if (LOGGED_FIRST_APPLY.compareAndSet(false, true)) {
+            DiagonalFences.LOGGER.info("Sloped fence arm translator consulted; injecting arms ({} cardinal sides found).",
+                    cardinalArms.size());
+        }
         newSelectors.add(new Selector(Optional.empty(),
                 new ElevatedArmsVariant(FenceArmVariants.allArms(cardinalArms), this.diagonalBlockType)));
         return new BlockModelDefinition.MultiPartDefinition(newSelectors);
