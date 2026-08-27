@@ -51,4 +51,30 @@ public interface FenceView {
      * @return whether the position one block up holds a fence of this kind
      */
     boolean fenceAbove(BlockPos blockPos);
+
+    /**
+     * Whether the block at {@code blockPos} carries a flat (same height) arm toward
+     * {@code direction} that reaches <strong>another rail</strong> -- a fence, or a fence gate
+     * facing the right way -- rather than running into terrain.
+     * <p>
+     * <strong>Read the next paragraph before you use this method anywhere new.</strong> This is the
+     * predicate Phase 6 was written to fix and Phase 9 deleted, restored in Phase 12 for the
+     * opposite job. It is consulted by {@link ElevatedConnections#suppressFlatArms} <em>only</em>,
+     * to decide whether a flat rail is <em>kept</em>. It must never be reached from
+     * {@link ElevatedConnections#connectsElevated}: a flat arm does not decide whether a slope
+     * forms, and wiring this back into that predicate is precisely the bug that suppressed the
+     * railing on every staircase in the game -- see {@code gotchas.md} (2026-08-26).
+     * <p>
+     * <strong>"To a rail" is the distinction the whole method exists for.</strong> A vanilla fence
+     * sets its side property against <em>any sturdy full-block face</em>, not only against another
+     * fence, so the lower fence of every staircase carries a flat arm into the riser block it
+     * climbs. That arm is invisible inside the neighbour and its collision box is already inside a
+     * full cube -- it is the one a sloped arm should replace. An arm that reaches another rail is
+     * a rail somebody built and can see, and it stays.
+     *
+     * @param blockPos  the position to inspect
+     * @param direction the arm direction to inspect
+     * @return whether a flat arm to another rail is present
+     */
+    boolean hasFlatArmToRail(BlockPos blockPos, EightWayDirection direction);
 }

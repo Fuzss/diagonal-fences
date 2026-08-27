@@ -12,6 +12,7 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -157,7 +158,17 @@ public class ElevatedDiagonalFenceBlock extends DiagonalFenceBlock {
 
     private VoxelShape elevatedShape(ElevatedShapeCache shapeCache, BlockState blockState, BlockGetter blockGetter, BlockPos blockPos) {
         int flatIndex = this._getAABBIndex(blockState);
-        return shapeCache.getShape(flatIndex, this.computePitchMask(blockGetter, blockPos));
+        FenceView fenceView = this.fenceViewOrNull(blockGetter);
+        if (fenceView == null) {
+            // see fenceViewOrNull: no world, so no pitch and nothing to suppress
+            return shapeCache.getShape(flatIndex, ElevatedConnections.EMPTY_PITCH_MASK);
+        }
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, blockPos);
+        // A sloped side takes over the flat arm buried in the block it climbs, so the shape is built
+        // on the index that survives that rather than on the one the block state carries. It happens
+        // here, not in the cache, because the answer needs the level and the cache has none.
+        return shapeCache.getShape(ElevatedConnections.suppressFlatArms(fenceView, blockPos, flatIndex, pitchMask),
+                pitchMask);
     }
 
     /**
@@ -177,12 +188,15 @@ public class ElevatedDiagonalFenceBlock extends DiagonalFenceBlock {
      * mask comes out empty either way and the assertions still hold with the branch deleted. It
      * earns its place as the intent made explicit, plus the sixteen probes per state it saves across
      * the 6,656 fence states built at startup. Do not delete it because coverage says it is dead.
+     *
+     * @return the view to resolve arms through, or {@code null} when there is no world to resolve
+     *         them against and the answer must be the plain flat shape
      */
-    private int computePitchMask(BlockGetter blockGetter, BlockPos blockPos) {
+    @Nullable
+    private FenceView fenceViewOrNull(BlockGetter blockGetter) {
         if (blockGetter == EmptyBlockGetter.INSTANCE) {
-            return ElevatedConnections.EMPTY_PITCH_MASK;
+            return null;
         }
-        FenceView fenceView = new LevelFenceView(blockGetter, this.diagonalBlockType);
-        return ElevatedConnections.computePitchMask(fenceView, blockPos);
+        return new LevelFenceView(blockGetter, this.diagonalBlockType);
     }
 }

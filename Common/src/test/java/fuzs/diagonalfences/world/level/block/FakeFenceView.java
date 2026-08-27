@@ -30,4 +30,19 @@ final class FakeFenceView implements FenceView {
     public boolean fenceAbove(BlockPos blockPos) {
         return this.fences.contains(blockPos.above());
     }
+
+    /**
+     * A flat rail exists toward {@code direction} exactly when a fence was declared beside this one
+     * at the same height.
+     * <p>
+     * The real view also has to check that the block state's side property is set, because vanilla
+     * sets it against terrain too and that is the whole distinction the method draws. There are no
+     * block states here, so the fake states the same thing the only way it can: a neighbouring fence
+     * is a rail, and anything else -- including the terrain that made the property true in the first
+     * place -- is not. {@link ElevatedFenceInLevelTest} is where the property half is exercised.
+     */
+    @Override
+    public boolean hasFlatArmToRail(BlockPos blockPos, EightWayDirection direction) {
+        return this.fences.contains(blockPos.offset(direction.getX(), 0, direction.getZ()));
+    }
 }

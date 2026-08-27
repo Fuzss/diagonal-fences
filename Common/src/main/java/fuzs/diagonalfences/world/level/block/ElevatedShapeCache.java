@@ -106,7 +106,12 @@ public final class ElevatedShapeCache {
     }
 
     /**
-     * @param flatIndex upstream's flat arm index, {@code 0..255}
+     * @param flatIndex upstream's flat arm index, {@code 0..255}, <strong>already filtered through
+     *                  {@link ElevatedConnections#suppressFlatArms}</strong> by the caller. This
+     *                  class deliberately stays a pure {@code int -> shape} function with no level
+     *                  access, so the one question suppression needs -- does that flat arm reach a
+     *                  rail? -- has to be answered before the key is built. Two states that differ
+     *                  only in a suppressed arm therefore arrive here identical and share one entry.
      * @param pitchMask a mask from {@link ElevatedConnections#computePitchMask}
      * @return the shape for that combination, built on first use
      * @throws IllegalArgumentException if either argument is out of range. Bounds are checked on the

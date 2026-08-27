@@ -45,13 +45,13 @@
     ],
     "links": [
         {
-            "name": "github",
-            "slug": "diagonalfences"
-        },
-        {
             "name": "curseforge",
             "slug": "diagonal-fences",
             "id": "458048"
+        },
+        {
+            "name": "github",
+            "slug": "diagonalfences"
         },
         {
             "name": "modrinth",

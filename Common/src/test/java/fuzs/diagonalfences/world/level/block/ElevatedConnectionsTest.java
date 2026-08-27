@@ -254,25 +254,360 @@ class ElevatedConnectionsTest {
                 "a rail on the flat face must not stop the arm climbing over it");
     }
 
+    // --- a cardinal arm shadows the diagonals through its side (Phase 11) ----------------------
+
+    /**
+     * <strong>Phase 11, the rule itself.</strong> A cardinal arm has run {@code 8} and an
+     * intercardinal one run {@code 8 * sqrt(2)}, so the cardinal is always the shorter arm and takes
+     * the side. The two diagonals that leave through the same side lose.
+     */
+    @Test
+    void aCardinalArmShadowsTheDiagonalsThatShareItsSide() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(EightWayDirection.NORTH))
+                .withFence(up(EightWayDirection.NORTH_EAST))
+                .withFence(up(EightWayDirection.NORTH_WEST));
+
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH),
+                "the shortest arm keeps the side and is never itself shadowed");
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_EAST),
+                "the north-east arm leaves through the north side, which north already took");
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_WEST),
+                "and so does the north-west arm");
+    }
+
+    /**
+     * Shadowing is per side, not per post. A cardinal arm on the far side of the block takes nothing
+     * away from a diagonal that never touches it -- otherwise one straight rail anywhere would strip
+     * a post of every diagonal it has.
+     */
+    @Test
+    void aCardinalArmOnAnUnrelatedSideShadowsNothing() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(EightWayDirection.SOUTH))
+                .withFence(up(EightWayDirection.NORTH_EAST));
+
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.SOUTH));
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_EAST),
+                "south and north-east share no side; the diagonal must survive");
+    }
+
+    /**
+     * The owner's tie-break, 2026-08-27: two diagonals through one side are equal length, so nothing
+     * outbids anything and <em>both</em> are kept. They leave through opposite corners of the post
+     * and draw a V. Only a cardinal ever shadows.
+     */
+    @Test
+    void twoDiagonalsThroughOneSideAreAForkAndBothSurvive() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(EightWayDirection.NORTH_EAST))
+                .withFence(up(EightWayDirection.NORTH_WEST));
+
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_EAST));
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_WEST),
+                "with no cardinal north arm to outbid them, a fork keeps both rails");
+    }
+
+    /**
+     * The half a near-end-only implementation would drop, and the half that would produce a
+     * one-ended arm: the block being asked has no cardinal arm at all, but the far end of the
+     * diagonal does, on a side the diagonal arrives through.
+     */
+    @Test
+    void theFarEndsCardinalArmShadowsToo() {
+        BlockPos upper = up(EightWayDirection.NORTH_EAST);
+        // a rising west arm from the far end -- west is one of the two sides the north-east arm
+        // arrives through, since the arm enters the far end travelling south-west
+        BlockPos farCardinal = upper.offset(EightWayDirection.WEST.getX(), 1, EightWayDirection.WEST.getZ());
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN).withFence(upper).withFence(farCardinal);
+
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN),
+                        EightWayDirection.NORTH_EAST),
+                "the near end is clear but the far end's west side is already taken");
+        int upperMask = ElevatedConnections.computePitchMask(fenceView, upper);
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(upperMask, EightWayDirection.SOUTH_WEST),
+                "and the far end must not report the arm either");
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(upperMask, EightWayDirection.WEST),
+                "the arm that did the shadowing is still there");
+    }
+
+    /**
+     * A side is a side whichever way its rail goes. This is also the accepted cost of the rule
+     * written down: a post that arrives on {@code NORTH} and leaves on {@code NORTH_EAST} -- an
+     * ordinary kink in a railing -- loses the diagonal. The kink and the X the rule exists to cut
+     * are locally the same shape, so one cannot be kept without the other.
+     */
+    @Test
+    void aFallingCardinalArmShadowsAsWellAsARisingOne() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(down(EightWayDirection.NORTH))
+                .withFence(up(EightWayDirection.NORTH_EAST));
+
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        assertEquals(ElevatedConnections.PITCH_DOWN,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH));
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(pitchMask, EightWayDirection.NORTH_EAST),
+                "a falling north arm holds the north side just as a rising one does");
+    }
+
+    /**
+     * The property that catches a one-sided shadow: a suppressed arm must be suppressed at
+     * <em>both</em> ends. Here only the near end carries the shadowing cardinal arm, so an
+     * implementation that evaluated the rule from the asking block alone would draw half a rail at
+     * the far end.
+     */
+    @ParameterizedTest
+    @EnumSource(value = EightWayDirection.class, names = {"NORTH_EAST", "NORTH_WEST", "SOUTH_EAST", "SOUTH_WEST"})
+    void shadowingIsSymmetricAtBothEnds(EightWayDirection direction) {
+        BlockPos upper = up(direction);
+        EightWayDirection cardinal = direction.getCardinalNeighbors()[0];
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN).withFence(upper).withFence(up(cardinal));
+
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, ORIGIN), direction),
+                "the near end must drop " + direction + "; " + cardinal + " holds that side");
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, upper),
+                        direction.getOpposite()),
+                "arm suppressed at the lower end but still drawn at the upper end");
+    }
+
+    /**
+     * <strong>The reported artefact, 2026-08-27.</strong> Two parallel runs one block apart and one
+     * block up used to slope into each other diagonally as well as straight, drawing an X between
+     * them. Every low fence wants a straight arm and a diagonal one; the straight arm is shorter and
+     * takes the side, so the crossing never forms.
+     * <p>
+     * This is the test that fails if Phase 11 is reverted.
+     */
+    @Test
+    void twoParallelRunsOneUpDoNotCross() {
+        BlockPos lowerWest = ORIGIN;
+        BlockPos lowerEast = ORIGIN.offset(1, 0, 0);
+        BlockPos upperWest = ORIGIN.offset(0, 1, -1);
+        BlockPos upperEast = ORIGIN.offset(1, 1, -1);
+        FakeFenceView fenceView = new FakeFenceView().withFence(lowerWest)
+                .withFence(lowerEast)
+                .withFence(upperWest)
+                .withFence(upperEast);
+
+        int lowerWestMask = ElevatedConnections.computePitchMask(fenceView, lowerWest);
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(lowerWestMask, EightWayDirection.NORTH),
+                "the straight rail up to the fence directly opposite must stay");
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(lowerWestMask, EightWayDirection.NORTH_EAST),
+                "the crossing arm to the far upper fence is the X and must be gone");
+
+        int lowerEastMask = ElevatedConnections.computePitchMask(fenceView, lowerEast);
+        assertEquals(ElevatedConnections.PITCH_UP,
+                ElevatedConnections.pitchFor(lowerEastMask, EightWayDirection.NORTH));
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(lowerEastMask, EightWayDirection.NORTH_WEST),
+                "the other half of the X");
+
+        // and the same read from the upper run, which is what a one-ended shadow would betray
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, upperWest),
+                        EightWayDirection.SOUTH_EAST));
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(ElevatedConnections.computePitchMask(fenceView, upperEast),
+                        EightWayDirection.SOUTH_WEST));
+    }
+
+    // --- position reuse -------------------------------------------------------------------------
+
     /**
      * The neighbour position is a single reused {@link BlockPos.MutableBlockPos}. If a probe ever
      * left it holding the previous direction's coordinates, the mask would come out wrong; asking
-     * for all eight directions at once is what would catch that.
+     * for four directions at alternating heights is what would catch that.
+     * <p>
+     * Cardinals and intercardinals are probed in <em>separate</em> fixtures on purpose. A single
+     * eight-way star cannot test this any more: Phase 11 legitimately suppresses every diagonal in
+     * it, so a stale position would no longer change the expected mask.
      */
     @Test
-    void reusingOneMutablePositionDoesNotLeakBetweenDirections() {
+    void reusingOneMutablePositionDoesNotLeakBetweenCardinals() {
+        assertNoPositionLeak(EightWayDirection.getCardinalDirections());
+    }
+
+    /** @see #reusingOneMutablePositionDoesNotLeakBetweenCardinals() */
+    @Test
+    void reusingOneMutablePositionDoesNotLeakBetweenIntercardinals() {
+        assertNoPositionLeak(EightWayDirection.getIntercardinalDirections());
+    }
+
+    private static void assertNoPositionLeak(EightWayDirection[] directions) {
         FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN);
-        for (EightWayDirection direction : EightWayDirection.values()) {
-            // up for cardinals, down for intercardinals, so a stale position cannot accidentally
-            // land on a position that happens to be right
-            fenceView.withFence(direction.isIntercardinal() ? down(direction) : up(direction));
+        for (int i = 0; i < directions.length; i++) {
+            // alternating up and down, so a stale position cannot accidentally land somewhere that
+            // happens to be right
+            fenceView.withFence(i % 2 == 0 ? up(directions[i]) : down(directions[i]));
         }
         int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
-        for (EightWayDirection direction : EightWayDirection.values()) {
-            assertEquals(direction.isIntercardinal() ? ElevatedConnections.PITCH_DOWN : ElevatedConnections.PITCH_UP,
-                    ElevatedConnections.pitchFor(pitchMask, direction),
-                    "direction " + direction + " resolved against a stale position");
+        for (int i = 0; i < directions.length; i++) {
+            assertEquals(i % 2 == 0 ? ElevatedConnections.PITCH_UP : ElevatedConnections.PITCH_DOWN,
+                    ElevatedConnections.pitchFor(pitchMask, directions[i]),
+                    "direction " + directions[i] + " resolved against a stale position");
         }
+    }
+
+    // --- a sloped side hides its own flat arm (Phase 12) ----------------------------------------
+
+    /** Every flat bit set, and a lone fence with no rail beside it in any direction. */
+    private static final int ALL_FLAT_ARMS = (1 << ElevatedConnections.FLAT_INDEX_WIDTH) - 1;
+
+    private static FakeFenceView loneFence() {
+        return new FakeFenceView().withFence(ORIGIN);
+    }
+
+    /**
+     * The bit a direction owns in upstream's flat index is
+     * {@link EightWayDirection#getHorizontalIndex()}, and {@code suppressFlatArms} has to clear that
+     * one and nothing else. Asserted against a full index rather than a single bit, so a shift that
+     * is off by one shows up as a surviving neighbour rather than as a mask that happens to be zero.
+     * <p>
+     * No rail stands beside this fence in any direction, so every flat arm it carries runs into
+     * terrain and is a candidate.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void aSlopedSideClearsItsOwnFlatBitAndNoOther(EightWayDirection direction) {
+        FenceView fenceView = loneFence();
+        for (int pitch : new int[]{ElevatedConnections.PITCH_UP, ElevatedConnections.PITCH_DOWN}) {
+            int pitchMask = ElevatedConnections.withPitch(0, direction, pitch);
+            assertEquals(ALL_FLAT_ARMS & ~direction.getHorizontalIndex(),
+                    ElevatedConnections.suppressFlatArms(fenceView, ORIGIN, ALL_FLAT_ARMS, pitchMask),
+                    direction + " at pitch " + pitch + " cleared the wrong flat arm");
+        }
+    }
+
+    /** A falling arm hides a flat rail exactly as a rising one does; the side is what matters. */
+    @Test
+    void everySlopedSideIsSuppressedAtOnce() {
+        int pitchMask = 0;
+        for (EightWayDirection direction : EightWayDirection.values()) {
+            pitchMask = ElevatedConnections.withPitch(pitchMask,
+                    direction,
+                    direction.isIntercardinal() ? ElevatedConnections.PITCH_DOWN : ElevatedConnections.PITCH_UP);
+        }
+        assertEquals(0, ElevatedConnections.suppressFlatArms(loneFence(), ORIGIN, ALL_FLAT_ARMS, pitchMask));
+    }
+
+    @Test
+    void aFlatArmOnASideThatDoesNotSlopeSurvives() {
+        int northAndEast = EightWayDirection.NORTH.getHorizontalIndex() | EightWayDirection.EAST.getHorizontalIndex();
+        int northUp = ElevatedConnections.withPitch(0, EightWayDirection.NORTH, ElevatedConnections.PITCH_UP);
+        assertEquals(EightWayDirection.EAST.getHorizontalIndex(),
+                ElevatedConnections.suppressFlatArms(loneFence(), ORIGIN, northAndEast, northUp));
+    }
+
+    /**
+     * <strong>The owner's narrowing, at unit level.</strong> A flat rail that reaches another rail is
+     * one somebody built and can see, and it survives the slope leaving through the same side. Only
+     * the arm a fence grows into a sturdy face -- invisible, buried in a full cube -- gives way.
+     * <p>
+     * The fixture differs from {@link #aSlopedSideClearsItsOwnFlatBitAndNoOther} by one fence, placed
+     * beside the origin rather than above and along, and that one fence flips the answer.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void aFlatRailThatReachesAnotherRailSurvivesTheSlopeOnItsOwnSide(EightWayDirection direction) {
+        FenceView fenceView = loneFence().withFence(ORIGIN.offset(direction.getX(), 0, direction.getZ()));
+        int pitchMask = ElevatedConnections.withPitch(0, direction, ElevatedConnections.PITCH_UP);
+        assertEquals(ALL_FLAT_ARMS,
+                ElevatedConnections.suppressFlatArms(fenceView, ORIGIN, ALL_FLAT_ARMS, pitchMask),
+                direction + " dropped a flat rail that reaches a real rail");
+    }
+
+    /**
+     * A fence with no slope anywhere must come back byte-identical, because that is the state
+     * upstream's own shapes are indexed by and the one every fence in the game outside a staircase
+     * is in.
+     */
+    @Test
+    void anEmptyPitchMaskLeavesTheFlatIndexAlone() {
+        FenceView fenceView = loneFence();
+        for (int flatIndex = 0; flatIndex < (1 << ElevatedConnections.FLAT_INDEX_WIDTH); flatIndex++) {
+            assertEquals(flatIndex,
+                    ElevatedConnections.suppressFlatArms(fenceView,
+                            ORIGIN,
+                            flatIndex,
+                            ElevatedConnections.EMPTY_PITCH_MASK));
+        }
+    }
+
+    /**
+     * The render path's entry point and the shape path's must not be able to disagree: one rule,
+     * reached two ways. The fixture gives the origin a rising arm on one side, a falling one on the
+     * opposite side, and a rail beside it on a third, so a suppressed side, an unsuppressed sloped
+     * side and a flat side are all present at once.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void theRenderPathAndTheShapePathSuppressTheSameSides(EightWayDirection direction) {
+        FakeFenceView fenceView = loneFence().withFence(up(direction))
+                .withFence(down(direction.getOpposite()))
+                .withFence(ORIGIN.offset(direction.getX(), 0, direction.getZ()));
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        int suppressedFlatIndex = ElevatedConnections.suppressFlatArms(fenceView, ORIGIN, ALL_FLAT_ARMS, pitchMask);
+        for (EightWayDirection probed : EightWayDirection.values()) {
+            boolean clearedByTheMask = (suppressedFlatIndex & probed.getHorizontalIndex()) == 0;
+            assertEquals(clearedByTheMask,
+                    ElevatedConnections.suppressesFlatArm(fenceView, ORIGIN, probed),
+                    "the two paths disagree about " + probed);
+        }
+    }
+
+    /**
+     * The single-direction question the render path asks must give the same answer as the mask the
+     * collision path builds. They are one implementation on purpose; this is what fails if somebody
+     * writes a second one.
+     * <p>
+     * The fixture puts a rising arm on one side of {@code ORIGIN} and a falling arm on the opposite
+     * side, so both pitches and a genuine {@link ElevatedConnections#PITCH_NONE} are all covered for
+     * every direction.
+     */
+    @ParameterizedTest
+    @EnumSource(EightWayDirection.class)
+    void askingAboutOneDirectionAgreesWithTheWholeMask(EightWayDirection direction) {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(up(direction))
+                .withFence(down(direction.getOpposite()));
+        int pitchMask = ElevatedConnections.computePitchMask(fenceView, ORIGIN);
+        for (EightWayDirection probed : EightWayDirection.values()) {
+            assertEquals(ElevatedConnections.pitchFor(pitchMask, probed),
+                    ElevatedConnections.pitchFor(fenceView, ORIGIN, probed),
+                    "the mask and the single-direction probe disagree about " + probed);
+        }
+    }
+
+    /**
+     * A buried fence has no arms at all, and the single-direction probe has to reach that on the
+     * per-arm rule alone -- {@code computePitchMask}'s early-out on a covered block is an
+     * optimisation this path deliberately does not repeat.
+     */
+    @Test
+    void askingAboutOneDirectionRefusesABuriedFenceToo() {
+        FakeFenceView fenceView = new FakeFenceView().withFence(ORIGIN)
+                .withFence(ORIGIN.above())
+                .withFence(up(EightWayDirection.NORTH));
+        assertEquals(ElevatedConnections.PITCH_NONE,
+                ElevatedConnections.pitchFor(fenceView, ORIGIN, EightWayDirection.NORTH));
     }
 
     // --- argument guard -----------------------------------------------------------------------

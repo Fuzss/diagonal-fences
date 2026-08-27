@@ -141,22 +141,35 @@ public final class FenceArmVariants {
     }
 
     /**
-     * The single cardinal direction a condition requires to be {@code true}, or {@code null} if it
-     * does not name exactly one.
+     * The single direction a condition requires to be {@code true}, cardinal or intercardinal, or
+     * {@code null} if it does not name exactly one.
      * <p>
      * Requiring <em>exactly one</em> is what keeps this from matching the compound conditions
-     * upstream introduces for its intercardinal arms and for glass pane centre posts -- those name
-     * two or more directions, so they fall out here instead of being mistaken for a plain side.
+     * upstream introduces for glass pane centre posts -- those name two or more directions, so they
+     * fall out here instead of being mistaken for a plain side.
+     * <p>
+     * The intercardinal half of this is what identifies the arms upstream <em>appends</em>: its
+     * {@code MultiPartAppender} copies a side selector's condition with the key rotated clockwise,
+     * so a {@code north} arm becomes a {@code north_east} one and still names exactly one direction.
+     * That is the hook a sloped side needs to find the flat arm it must hide.
+     */
+    @Nullable
+    public static EightWayDirection singleTrueDirection(Condition condition) {
+        Set<EightWayDirection> directions = EnumSet.noneOf(EightWayDirection.class);
+        collectTrueDirections(condition, directions);
+        return directions.size() == 1 ? directions.iterator().next() : null;
+    }
+
+    /**
+     * {@link #singleTrueDirection} narrowed to a plain side of the base model, which is what
+     * {@link #cardinalArms} is reading for -- an intercardinal here would mean upstream's selectors
+     * were already appended, and taking one as a side would build the sloped arms out of arms that
+     * are already rotated.
      */
     @Nullable
     static EightWayDirection singleTrueCardinal(Condition condition) {
-        Set<EightWayDirection> directions = EnumSet.noneOf(EightWayDirection.class);
-        collectTrueDirections(condition, directions);
-        if (directions.size() != 1) {
-            return null;
-        }
-        EightWayDirection direction = directions.iterator().next();
-        return direction.isCardinal() ? direction : null;
+        EightWayDirection direction = singleTrueDirection(condition);
+        return direction != null && direction.isCardinal() ? direction : null;
     }
 
     /**

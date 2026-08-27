@@ -118,6 +118,31 @@ class FenceArmVariantsTest {
     }
 
     /**
+     * The wider question {@code singleTrueCardinal} is now a filter over. An intercardinal condition
+     * is not a side of the base model, but it <em>is</em> an arm -- the one upstream appended -- and
+     * a sloped side has to be able to find it in order to suppress it.
+     * <p>
+     * The two assertions on the same input are the whole point: the same condition must be an arm
+     * here and not a side above, or Phase 12 either misses the diagonal rails or builds its sheared
+     * arms out of already-rotated ones.
+     */
+    @Test
+    void anIntercardinalConditionIsAnArmEvenThoughItIsNotASide() {
+        assertEquals(EightWayDirection.NORTH_EAST,
+                FenceArmVariants.singleTrueDirection(propertyIsTrue("north_east")),
+                "an appended intercardinal arm could not be identified");
+        assertNull(FenceArmVariants.singleTrueCardinal(propertyIsTrue("north_east")),
+                "an intercardinal condition was read as a cardinal side");
+    }
+
+    /** A compound condition names no single arm either way, so nothing is suppressed on its account. */
+    @Test
+    void aTwoDirectionConditionNamesNoArm() {
+        assertNull(FenceArmVariants.singleTrueDirection(new CombinedCondition(CombinedCondition.Operation.AND,
+                List.of(propertyIsTrue("north"), propertyIsTrue("north_east")))));
+    }
+
+    /**
      * {@code "false"} and negated terms both appear in real fence and pane models and both mean
      * "no arm on this side". Treating either as an arm points the shear at a side that is not drawn.
      */

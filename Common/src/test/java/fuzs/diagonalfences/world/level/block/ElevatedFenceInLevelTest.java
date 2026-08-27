@@ -192,6 +192,11 @@ class ElevatedFenceInLevelTest {
      * Nothing here is contrived: {@code east=true} is exactly the state the game computes for a fence
      * placed against a block, and it is set explicitly only because {@link FakeLevel} does not run
      * {@code getStateForPlacement}.
+     * <p>
+     * <strong>The expected shape is the bare state, not {@code lowerAgainstRiser}.</strong> Since
+     * Phase 12 the buried east arm is exactly what the slope takes over -- it runs into the riser,
+     * not into a rail. {@link #aSlopedSideDropsItsFlatRailIntoTerrain} is the assertion that names
+     * that; this one still exists to say the slope <em>forms</em>.
      */
     @Test
     void slopesUpAlongsideAStairRunBuiltFromSolidBlocks() {
@@ -201,7 +206,7 @@ class ElevatedFenceInLevelTest {
                 .withBlock(ORIGIN.offset(1, 1, 0), fence());
 
         assertSame(expectedShape(fenceBlock.collisionShapes(),
-                        lowerAgainstRiser,
+                        fence(),
                         pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 lowerAgainstRiser.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
                 "a fence abutting the riser it climbs must still slope up to the fence above it");
@@ -297,9 +302,14 @@ class ElevatedFenceInLevelTest {
      * terrain where this one has a fence. Under Phase 6 those two differed; the whole point of
      * Phase 9 is that they no longer do, which is what "any fence one up and one along should
      * connect" means when written out.
+     * <p>
+     * <strong>It is also where Phase 12 stops.</strong> The expected shape still carries
+     * {@code east}: this flat rail reaches a real fence, so it is a rail somebody built and the slope
+     * beside it does not take it. That is the owner's narrowing, and it is what keeps a railing
+     * climbing past a two-tall post connected to the post's base as well as to its top.
      */
     @Test
-    void aFlatArmOnTheSameFaceStillGrowsASlope() {
+    void aFlatArmToAnotherFenceStillGrowsASlopeAndKeepsItsRail() {
         BlockState withFlatEastArm = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
         FakeLevel level = new FakeLevel().withBlock(ORIGIN, withFlatEastArm)
                 .withBlock(ORIGIN.offset(1, 0, 0), fence())
@@ -309,7 +319,94 @@ class ElevatedFenceInLevelTest {
                         withFlatEastArm,
                         pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 withFlatEastArm.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
-                "a face carrying a flat rail must still climb to the fence above that rail");
+                "a flat rail to a real fence must survive the slope leaving through the same side");
+    }
+
+    // --- a sloped side hides its own flat arm (Phase 12) -----------------------------------------
+
+    /**
+     * <strong>The owner's screenshot, and the test that fails if Phase 12 is reverted.</strong> A
+     * post drew a flat rail into the grass block beside it <em>and</em> a sloped rail to the fence
+     * one up and one along, both leaving through the same face. The slope takes the side.
+     * <p>
+     * The terrain block is what makes vanilla set {@code east} in the first place. The fixture is
+     * shared with {@link #slopesUpAlongsideAStairRunBuiltFromSolidBlocks}, deliberately: that one
+     * asserts the slope <em>forms</em> and states its expectation as the same block state, so it can
+     * no longer see the flat rail either way. This one states the expectation as the <em>bare</em>
+     * state, which is the only way the dropped rail shows up as a difference.
+     */
+    @Test
+    void aSlopedSideDropsItsFlatRailIntoTerrain() {
+        BlockState withFlatEastArm = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, withFlatEastArm)
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        fence(),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                withFlatEastArm.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "the sloped east side must take the flat east rail with it");
+    }
+
+    /**
+     * Only the side that slopes loses its rail. The west arm here runs into terrain exactly as the
+     * east one does, so the <em>only</em> thing keeping it is that west does not slope -- without
+     * this, the rule would quietly delete every flat rail on any fence that slopes anywhere.
+     */
+    @Test
+    void aFlatRailOnAnUnslopedSideSurvives() {
+        BlockState withBothFlatArms = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE)
+                .setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        BlockState westOnly = fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, withBothFlatArms)
+                .withBlock(ORIGIN.offset(-1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        westOnly,
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                withBothFlatArms.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "the west rail does not leave through the east side and must be kept");
+    }
+
+    /**
+     * The narrowing at the level the game runs, and the counterpart to
+     * {@link #aSlopedSideDropsItsFlatRailIntoTerrain}: the two fixtures differ by one block -- dirt
+     * beside the origin becomes a fence -- and that one block decides whether the flat rail lives.
+     * <p>
+     * A fence gate counts as a rail too. That falls out of asking vanilla's own
+     * {@code connectsTo} with {@code isSideSolid = false} rather than restating the list here, and
+     * {@link #aConnectingFenceGateNoLongerSuppressesTheSlope} covers it from the other side.
+     */
+    @Test
+    void aSlopedSideKeepsAFlatRailThatReachesAnotherFence() {
+        BlockState withFlatEastArm = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, withFlatEastArm)
+                .withBlock(ORIGIN.offset(1, 0, 0), fence())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        withFlatEastArm,
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                withFlatEastArm.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
+                "a rail somebody built and can see must not be taken by the slope beside it");
+    }
+
+    /** The outline follows the suppression too, or the highlight draws a rail the player walks through. */
+    @Test
+    void theOutlineDropsTheSuppressedFlatRailAsWell() {
+        BlockState withFlatEastArm = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, withFlatEastArm)
+                .withBlock(ORIGIN.offset(1, 0, 0), Blocks.DIRT.defaultBlockState())
+                .withBlock(ORIGIN.offset(1, 1, 0), fence());
+
+        assertSame(expectedShape(fenceBlock.outlineShapes(),
+                        fence(),
+                        pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
+                withFlatEastArm.getShape(level, ORIGIN, CollisionContext.empty()),
+                "render and collision must agree about which rails exist");
     }
 
     /**
@@ -520,6 +617,94 @@ class ElevatedFenceInLevelTest {
                         pitchMask(EightWayDirection.EAST, ElevatedConnections.PITCH_UP)),
                 waterlogged.getCollisionShape(level, ORIGIN, CollisionContext.empty()),
                 "waterlogging is not one of the arm properties and must not change the shape");
+    }
+
+    // --- a cardinal arm shadows the diagonals through its side (Phase 11) ------------------------
+
+    /**
+     * <strong>The artefact the owner reported on 2026-08-27, through a real level.</strong> Two fence
+     * runs side by side, one of them a block up on a terrace, used to slope into each other
+     * diagonally <em>as well as</em> straight -- an X hanging in the gap between them.
+     * <p>
+     * Every low fence wants two arms: a straight one to the fence directly opposite and a diagonal
+     * one to the fence beyond it. The straight arm has run {@code 8} and the diagonal run
+     * {@code 8 * sqrt(2)}, so the straight arm is shorter, takes the north side, and the crossing arm
+     * never forms:
+     * <pre>
+     * y+1, z-1:  [F3][F4]     on the terrace
+     * y  , z-1:  [dirt][dirt] the riser, which is why the low fences carry north=true
+     * y  , z  :  [F1][F2]     on the ground
+     * </pre>
+     * All four fences are asserted, because a shadow applied at one end only would leave the far end
+     * still drawing its half of the X. <strong>This is the test that fails if Phase 11 is
+     * reverted.</strong>
+     */
+    @Test
+    void twoParallelRunsOnATerraceDoNotCross() {
+        BlockPos lowerEast = ORIGIN.offset(1, 0, 0);
+        BlockPos upperWest = ORIGIN.offset(0, 1, -1);
+        BlockPos upperEast = ORIGIN.offset(1, 1, -1);
+        // north against the riser, and east/west against each other -- the state the game computes
+        // for fences placed in a run against a step, set explicitly because FakeLevel does not run
+        // getStateForPlacement
+        BlockState lowerWestState = fence().setValue(CrossCollisionBlock.NORTH, Boolean.TRUE)
+                .setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        BlockState lowerEastState = fence().setValue(CrossCollisionBlock.NORTH, Boolean.TRUE)
+                .setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        BlockState upperWestState = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        BlockState upperEastState = fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        // Since Phase 12 the low fences give up their north rail: it runs into the riser, not into a
+        // rail, and north is the side that slopes. Their east/west rails reach each other and stay.
+        BlockState lowerWestDrawn = fence().setValue(CrossCollisionBlock.EAST, Boolean.TRUE);
+        BlockState lowerEastDrawn = fence().setValue(CrossCollisionBlock.WEST, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerWestState)
+                .withBlock(lowerEast, lowerEastState)
+                .withBlock(ORIGIN.offset(0, 0, -1), Blocks.DIRT.defaultBlockState())
+                .withBlock(lowerEast.offset(0, 0, -1), Blocks.DIRT.defaultBlockState())
+                .withBlock(upperWest, upperWestState)
+                .withBlock(upperEast, upperEastState);
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerWestDrawn,
+                        pitchMask(EightWayDirection.NORTH, ElevatedConnections.PITCH_UP)),
+                collisionShapeAt(level, ORIGIN),
+                "the low west fence must rise straight north and grow no arm across to the far one");
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerEastDrawn,
+                        pitchMask(EightWayDirection.NORTH, ElevatedConnections.PITCH_UP)),
+                collisionShapeAt(level, lowerEast),
+                "and neither may the low east fence");
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        upperWestState,
+                        pitchMask(EightWayDirection.SOUTH, ElevatedConnections.PITCH_DOWN)),
+                collisionShapeAt(level, upperWest),
+                "the terrace fence falls straight back south only");
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        upperEastState,
+                        pitchMask(EightWayDirection.SOUTH, ElevatedConnections.PITCH_DOWN)),
+                collisionShapeAt(level, upperEast),
+                "a shadow applied at the near end alone would leave this end drawing half an X");
+    }
+
+    /**
+     * The control that stops the test above passing vacuously. Take the straight rail away -- one
+     * low fence, one terrace fence diagonally beyond it -- and the diagonal arm is exactly what the
+     * feature is supposed to draw. Without this, code that had simply stopped sloping diagonally at
+     * all would pass.
+     */
+    @Test
+    void aDiagonalArmSurvivesWhenNoStraightRailContestsItsSides() {
+        BlockPos upperEast = ORIGIN.offset(1, 1, -1);
+        BlockState lowerState = fence().setValue(CrossCollisionBlock.NORTH, Boolean.TRUE);
+        FakeLevel level = new FakeLevel().withBlock(ORIGIN, lowerState)
+                .withBlock(ORIGIN.offset(0, 0, -1), Blocks.DIRT.defaultBlockState())
+                .withBlock(upperEast, fence());
+
+        assertSame(expectedShape(fenceBlock.collisionShapes(),
+                        lowerState,
+                        pitchMask(EightWayDirection.NORTH_EAST, ElevatedConnections.PITCH_UP)),
+                collisionShapeAt(level, ORIGIN),
+                "nothing contests the north or east side, so the diagonal arm must be drawn");
     }
 
     // --- helpers ------------------------------------------------------------------------------------

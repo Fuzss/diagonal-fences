@@ -17,8 +17,8 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Injects the sloped arm selector into every fence's multipart model, and repairs the geometry key
- * upstream leaves null on its way past.
+ * Injects the sloped arm selector into every fence's multipart model, wraps the flat arms so a
+ * sloped side can hide its own, and repairs the geometry key upstream leaves null on its way past.
  * <p>
  * Registered for our fence type only, from the Fabric client entry point. NeoForge never constructs
  * this class.
@@ -84,7 +84,7 @@ public class ElevatedMultiPartTranslator extends MultiPartTranslator {
             return withDiagonals;
         }
 
-        List<Selector> newSelectors = withGeometryKeys(selectors);
+        List<Selector> newSelectors = this.wrapArmSelectors(selectors);
         // Unconditional, and it has to be: MultiPartModel picks its submodels once per block state
         // and caches them, while the pitch is derived from neighbours and lives in no block state.
         // Appended last, so it never becomes the selector particleSprite reads.
@@ -98,20 +98,37 @@ public class ElevatedMultiPartTranslator extends MultiPartTranslator {
     }
 
     /**
-     * Wraps upstream's rotated arms so the multipart's geometry key stops coming back null. Every
-     * other selector is passed through untouched -- vanilla's own variants already implement the key.
-     *
-     * @see ConstantGeometryVariant
+     * Rewrites the existing selectors on the way past, for two independent reasons:
+     * <ul>
+     * <li>upstream's rotated arms are wrapped in a {@link ConstantGeometryVariant}, so the
+     * multipart's geometry key stops coming back null. Vanilla's own variants already implement the
+     * key and are left alone.</li>
+     * <li>every selector that names exactly one direction -- the four {@code fence_side} variants
+     * and the four upstream just appended -- is wrapped in a {@link PitchSuppressedVariant}, so that
+     * arm stops drawing once its side grows a sloped one.</li>
+     * </ul>
+     * The two nest, rotated arm innermost, because the suppression decides whether the wrapped
+     * geometry is drawn at all and therefore has to be the outer one.
+     * <p>
+     * The centre post has no condition and names no direction, so it falls through both branches
+     * untouched -- which matters, because it is the selector {@code MultiPartModel.particleSprite}
+     * reads.
      */
-    private static List<Selector> withGeometryKeys(List<Selector> selectors) {
+    private List<Selector> wrapArmSelectors(List<Selector> selectors) {
         List<Selector> newSelectors = new ArrayList<>(selectors.size() + 1);
         for (Selector selector : selectors) {
-            if (selector.variant() instanceof RotatedVariant) {
-                newSelectors.add(new Selector(selector.condition(),
-                        new ConstantGeometryVariant(selector.variant())));
-            } else {
-                newSelectors.add(selector);
+            BlockStateModel.Unbaked variant = selector.variant();
+            if (variant instanceof RotatedVariant) {
+                variant = new ConstantGeometryVariant(variant);
             }
+            EightWayDirection direction = selector.condition()
+                    .map(FenceArmVariants::singleTrueDirection)
+                    .orElse(null);
+            if (direction != null) {
+                variant = new PitchSuppressedVariant(variant, direction, this.diagonalBlockType);
+            }
+            newSelectors.add(variant == selector.variant() ? selector :
+                    new Selector(selector.condition(), variant));
         }
         return newSelectors;
     }

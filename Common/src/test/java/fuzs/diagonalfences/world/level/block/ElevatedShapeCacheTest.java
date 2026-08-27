@@ -151,6 +151,26 @@ class ElevatedShapeCacheTest {
         assertEquals(2, cache.cachedShapeCount(), "the cache must stop at its cap");
     }
 
+    /**
+     * <strong>This class does not know about flat suppression, and that is deliberate.</strong> The
+     * question suppression turns on -- does that flat arm reach a rail? -- needs the level, and this
+     * cache has none; {@link ElevatedDiagonalFenceBlock} answers it and hands the surviving index
+     * down. Keeping the cache a pure {@code int -> shape} function is what lets it be tested without
+     * a world at all.
+     * <p>
+     * So a suppressed index and an unsuppressed one are simply two different keys here, and the
+     * dedup the caller gets is a consequence of it passing the same index twice, asserted where it
+     * actually happens in {@link ElevatedFenceInLevelTest}.
+     */
+    @Test
+    void aFlatIndexIsTakenAtFaceValueEvenOnASlopedSide() {
+        ElevatedShapeCache cache = cache();
+        assertNotSame(cache.getShape(0, NORTH_UP),
+                cache.getShape(EightWayDirection.NORTH.getHorizontalIndex(), NORTH_UP),
+                "the cache must not second-guess the index it is handed");
+        assertEquals(2, cache.cachedShapeCount());
+    }
+
     @Test
     void keysOutsideTheirRangeAreRejectedRatherThanReadingTheNeighbouringShape() {
         ElevatedShapeCache cache = cache();
